@@ -114,11 +114,87 @@ así que verifican el parseo sin depender de la red.
 Están en [CONTRIBUTING.md](CONTRIBUTING.md): commits, catálogo de versiones, hooks
 y la regla de que `process.env` solo se toca desde `@fi/core`.
 
-## Pendientes conocidos
+## Roadmap
 
-- La migración nunca se aplicó contra un Postgres real (falta levantar el compose).
+Funcionalidades planificadas para versiones futuras:
+
+- **Novedades** — noticias de la facultad, suspensión de clases por alertas
+  meteorológicas o paros, comunicados de bedelía. Requiere una fuente de datos
+  oficial (RSS, scraping del sitio web o canal de comunicación interno).
+
+- **Mesas de exámenes** — fecha, aula y horario de cada final. El sistema SIU
+  Guaraní expone esta información pero requiere credenciales de alumno para
+  acceder. Necesita que cada usuario vincule su cuenta o que la facultad provea
+  un acceso institucional.
+
+- **Profesores por materia** — qué docente dicta cada cursada. MRBS registra el
+  nombre del responsable de la reserva; con un solo usuario institucional y
+  scraping se puede obtener sin que el alumno se matricule.
+
+- **Rating de materias y profesores** — recolección de opiniones de alumnos vía
+  WhatsApp, almacenamiento anónimo y consulta de promedios por materia o docente.
+
+## Base de conocimiento
+
+### Fuentes activas
+
+| Fuente                       | Contenido                                                                             | Actualización                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| MRBS (`salas.fi.mdp.edu.ar`) | Horarios de cursadas: aula, horario, materia, tipo                                    | Cron diario a las 4 am                                          |
+| `material/`                  | Calendario académico, planes de estudio, enlaces, infraestructura, grupos de WhatsApp | Script [`scripts/seed-material.mjs`](scripts/seed-material.mjs) |
+
+### Material pendiente para la BBDD
+
+El archivo [`scripts/seed-material.mjs`](scripts/seed-material.mjs) carga lo que
+ya está en `material/`. Lo que falta agregar a esa carpeta antes del próximo seed:
+
+#### Grupos de WhatsApp
+
+- Grupos por carrera: IINF, ICOM, IELEM, IQ, IMEC, IMAT, IA, IELO, Industrial,
+  Electromecánica (actualmente solo existe el grupo general del CEI).
+- Grupos por año o nivel (1.º, 2.º, …).
+- Grupos por materia de primer año (Análisis I, Álgebra, Física, etc.).
+- Grupo de novedades de bedelía o secretaría, si existe.
+- Discord oficial de la facultad (pendiente de conseguir el enlace).
+
+#### Enlaces
+
+- Discord oficial de la facultad (marcado como TODO en los datos actuales).
+- Instagram y Facebook oficiales de la facultad y de cada departamento.
+- Canal de noticias o comunicados (RSS u otro).
+- Formularios web: cambio de carrera, renuncia de habilitación, solicitudes varias.
+- Catálogo y acceso en línea de la biblioteca universitaria.
+
+#### Infraestructura
+
+- Horarios de atención de bedelía (días y franjas horarias).
+- Horarios de secretaría académica.
+- Biblioteca: ubicación exacta, horarios, cómo acceder al catálogo.
+- Laboratorio de Idiomas: cómo inscribirse al nivel IV, fechas de la prueba de
+  suficiencia (requisito de egreso para todos los planes).
+- Buffet/comedor: horarios y ubicación.
+- WiFi para alumnos: cómo conectarse, credenciales o portal captivo.
+- Sala de computación: horarios de acceso libre.
+
+#### Información institucional
+
+- Reglamento de regularidad: inasistencias permitidas y condiciones para
+  perder la regularidad.
+- Reglamento de promoción sin examen final: requisitos de nota y asistencia.
+- Proceso paso a paso de inscripción en SIU Guaraní.
+- Renuncia de habilitación: plazo, formulario y consecuencias.
+- Proceso de cambio de carrera o de plan de estudios (ventana: 02/02–20/02 según
+  el calendario vigente).
+- Becas disponibles: universitarias, nacionales (PNBU) y de la facultad.
+- Contactos de departamentos: email, teléfono y horario de atención.
+- Requisitos de egreso: nivel IV de inglés, Práctica Profesional Supervisada
+  (200 hs) y Práctica Sociocomunitaria.
+
+## Pendientes técnicos
+
 - El bot no distingue comisiones cuando el alumno no las nombra: si una materia
   tiene A1 y A2, las lista todas.
-- No hay rate limiting por JID; conviene agregarlo antes de exponerlo a alumnos.
-- Ampliar el alcance más allá de horarios requiere otra fuente de datos y ajustar
-  la instrucción de sistema en [prompt.ts](packages/ai/src/prompt.ts).
+- El menú de opciones y la tabla `material` están diseñados pero aún no
+  implementados; el bot responde en modo libre sin estructura de opciones.
+- El deploy en el servidor definitivo de la Facultad está pendiente; la imagen
+  Docker se publica en GHCR pero no hay pipeline de deploy automático.
