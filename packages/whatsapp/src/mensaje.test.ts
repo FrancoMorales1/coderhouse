@@ -13,10 +13,10 @@ describe('extraerTexto', () => {
     );
   });
 
-  it('usa el caption de una imagen', () => {
-    expect(extraerTexto({ imageMessage: { caption: 'Mirá este cartel' } })).toBe(
-      'Mirá este cartel',
-    );
+  it('ignora imágenes, videos y documentos aunque tengan caption', () => {
+    expect(extraerTexto({ imageMessage: { caption: 'Mirá este cartel' } })).toBeUndefined();
+    expect(extraerTexto({ videoMessage: { caption: 'Video con texto' } })).toBeUndefined();
+    expect(extraerTexto({ documentMessage: { caption: 'Doc adjunto' } })).toBeUndefined();
   });
 
   it('devuelve undefined para mensajes sin texto útil', () => {
