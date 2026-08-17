@@ -5,16 +5,9 @@ export interface FragmentoContexto {
   contenido: string;
 }
 
-/** Un turno previo de la conversación de WhatsApp. */
-export interface TurnoConversacion {
-  rol: 'usuario' | 'asistente';
-  contenido: string;
-}
-
-/** Todo lo que la IA necesita para responder: mensaje + contexto + contenido de la BBDD. */
+/** Todo lo que la IA necesita para responder: la consulta natural + contexto de la BBDD. */
 export interface ConsultaIA {
   mensaje: string;
-  historial: TurnoConversacion[];
   documentos: FragmentoContexto[];
 }
 

@@ -1,11 +1,16 @@
-import { conversaciones, db, mensajes } from '@fi/db';
+import { db } from '@fi/db';
 import { fechaEnZona, nombreDiaSemana, sumarDias } from '@fi/scrapper';
-import { desc, eq, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 
-import type { FragmentoContexto, TurnoConversacion } from '@fi/ai';
+import type { FragmentoContexto } from '@fi/ai';
+
+import type { NumeroOpcion } from './menu.js';
 
 const MAX_CLASES = 30;
-const MAX_TURNOS_HISTORIAL = 10;
+const MAX_FRAGMENTOS_MATERIAL = 3;
+const MAX_CHARS_MATERIAL = 3_000;
+
+// ── Horarios ─────────────────────────────────────────────────────────────────
 
 interface FilaCursada extends Record<string, unknown> {
   fecha: string;
@@ -40,34 +45,35 @@ function describir(fila: FilaCursada): string {
 }
 
 /**
- * Busca clases por nombre de materia con full-text en español, acotado a los días
- * que están cargados de hoy en adelante. Si la consulta no matchea nada (el alumno
- * escribió "que tengo mañana"), devuelve la agenda del rango igual, para que el
- * modelo tenga con qué responder.
+ * Busca clases por full-text en español, acotado a los próximos 7 días.
+ * Si la consulta no matchea nada, devuelve toda la agenda del rango.
  */
-export async function buscarHorarios(consulta: string): Promise<FragmentoContexto[]> {
+async function buscarHorarios(consulta: string): Promise<FragmentoContexto[]> {
   const hoy = fechaEnZona(new Date());
   const hasta = sumarDias(hoy, 7);
 
-  const porMateria = await db.execute<FilaCursada>(sql`
-    select fecha, dia_semana, hora_inicio, hora_fin, materia, titulo_crudo, tipo, comision, aula
-    from cursadas
-    where fecha >= ${hoy} and fecha <= ${hasta}
-      and to_tsvector('spanish', materia) @@ plainto_tsquery('spanish', ${consulta})
-    order by fecha, hora_inicio
-    limit ${MAX_CLASES}
-  `);
+  const porMateria =
+    consulta.length > 0
+      ? await db.execute<FilaCursada>(sql`
+          SELECT fecha, dia_semana, hora_inicio, hora_fin, materia, titulo_crudo, tipo, comision, aula
+          FROM cursadas
+          WHERE fecha >= ${hoy} AND fecha <= ${hasta}
+            AND to_tsvector('spanish', materia) @@ plainto_tsquery('spanish', ${consulta})
+          ORDER BY fecha, hora_inicio
+          LIMIT ${MAX_CLASES}
+        `)
+      : { rows: [] };
 
   const filas =
     porMateria.rows.length > 0
       ? porMateria.rows
       : (
           await db.execute<FilaCursada>(sql`
-            select fecha, dia_semana, hora_inicio, hora_fin, materia, titulo_crudo, tipo, comision, aula
-            from cursadas
-            where fecha >= ${hoy} and fecha <= ${hasta}
-            order by fecha, hora_inicio
-            limit ${MAX_CLASES}
+            SELECT fecha, dia_semana, hora_inicio, hora_fin, materia, titulo_crudo, tipo, comision, aula
+            FROM cursadas
+            WHERE fecha >= ${hoy} AND fecha <= ${hasta}
+            ORDER BY fecha, hora_inicio
+            LIMIT ${MAX_CLASES}
           `)
         ).rows;
 
@@ -82,52 +88,59 @@ export async function buscarHorarios(consulta: string): Promise<FragmentoContext
   ];
 }
 
-/** Devuelve la conversación del JID, creándola si es la primera vez. */
-export async function obtenerConversacion(jid: string, nombre?: string): Promise<string> {
-  const [existente] = await db
-    .select({ id: conversaciones.id })
-    .from(conversaciones)
-    .where(eq(conversaciones.jid, jid))
-    .limit(1);
+// ── Material ──────────────────────────────────────────────────────────────────
 
-  if (existente) {
-    await db
-      .update(conversaciones)
-      .set({ ultimoMensajeEn: new Date() })
-      .where(eq(conversaciones.id, existente.id));
-    return existente.id;
+interface FilaMaterial extends Record<string, unknown> {
+  titulo: string;
+  contenido: string;
+}
+
+async function buscarEnMaterial(
+  categorias: string[],
+  consulta: string,
+): Promise<FragmentoContexto[]> {
+  const filas =
+    consulta.length > 0
+      ? await db.execute<FilaMaterial>(sql`
+          SELECT titulo, contenido
+          FROM material
+          WHERE categoria = ANY(${categorias}::text[])
+            AND to_tsvector('spanish', titulo || ' ' || contenido)
+                @@ plainto_tsquery('spanish', ${consulta})
+          ORDER BY ts_rank(
+            to_tsvector('spanish', titulo || ' ' || contenido),
+            plainto_tsquery('spanish', ${consulta})
+          ) DESC
+          LIMIT ${MAX_FRAGMENTOS_MATERIAL}
+        `)
+      : await db.execute<FilaMaterial>(sql`
+          SELECT titulo, contenido
+          FROM material
+          WHERE categoria = ANY(${categorias}::text[])
+          LIMIT ${MAX_FRAGMENTOS_MATERIAL}
+        `);
+
+  return filas.rows.map((fila) => ({
+    titulo: fila.titulo,
+    url: 'https://www.fi.mdp.edu.ar/',
+    contenido: fila.contenido.slice(0, MAX_CHARS_MATERIAL),
+  }));
+}
+
+// ── Router por opción de menú ─────────────────────────────────────────────────
+
+export async function obtenerContextoDeOpcion(
+  opcion: NumeroOpcion,
+  consulta: string,
+): Promise<FragmentoContexto[]> {
+  switch (opcion) {
+    case 1:
+      return buscarHorarios(consulta);
+    case 2:
+      return buscarEnMaterial(['calendario'], consulta);
+    case 3:
+      return buscarEnMaterial(['plan_estudios'], consulta);
+    case 4:
+      return buscarEnMaterial(['infraestructura', 'enlace', 'grupo_wpp'], consulta);
   }
-
-  const [creada] = await db
-    .insert(conversaciones)
-    .values({ jid, nombre: nombre ?? null })
-    .returning({ id: conversaciones.id });
-
-  if (!creada) throw new Error(`No se pudo crear la conversación para ${jid}`);
-  return creada.id;
-}
-
-export async function obtenerHistorial(conversacionId: string): Promise<TurnoConversacion[]> {
-  const filas = await db
-    .select({ rol: mensajes.rol, contenido: mensajes.contenido })
-    .from(mensajes)
-    .where(eq(mensajes.conversacionId, conversacionId))
-    .orderBy(desc(mensajes.creadoEn))
-    .limit(MAX_TURNOS_HISTORIAL);
-
-  return filas
-    .reverse()
-    .filter((fila) => fila.rol !== 'sistema')
-    .map((fila) => ({
-      rol: fila.rol === 'usuario' ? ('usuario' as const) : ('asistente' as const),
-      contenido: fila.contenido,
-    }));
-}
-
-export async function guardarTurno(
-  conversacionId: string,
-  rol: 'usuario' | 'asistente',
-  contenido: string,
-): Promise<void> {
-  await db.insert(mensajes).values({ conversacionId, rol, contenido });
 }

@@ -8,6 +8,13 @@
       "when": 1786972421277,
       "tag": "0000_sleepy_spyke",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787900000000,
+      "tag": "0001_material_table",
+      "breakpoints": true
     }
   ]
 }

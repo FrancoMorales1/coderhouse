@@ -6,7 +6,6 @@ import type { ConsultaIA } from './types.js';
 
 const consultaBase: ConsultaIA = {
   mensaje: '¿Cuándo son las inscripciones a cursadas?',
-  historial: [],
   documentos: [],
 };
 
@@ -17,10 +16,10 @@ describe('construirPrompt', () => {
     expect(prompt).toContain('¿Cuándo son las inscripciones a cursadas?');
   });
 
-  it('avisa al modelo cuando no hay horarios cargados', () => {
+  it('avisa al modelo cuando no hay información disponible', () => {
     const prompt = construirPrompt(consultaBase);
 
-    expect(prompt).toContain('No hay horarios cargados');
+    expect(prompt).toContain('No hay información disponible');
   });
 
   it('numera los documentos y expone su fuente', () => {
@@ -47,19 +46,6 @@ describe('construirPrompt', () => {
 
     expect(prompt).not.toContain('x'.repeat(4001));
     expect(prompt).toContain('x'.repeat(4000));
-  });
-
-  it('etiqueta cada turno del historial', () => {
-    const prompt = construirPrompt({
-      ...consultaBase,
-      historial: [
-        { rol: 'usuario', contenido: 'Hola' },
-        { rol: 'asistente', contenido: '¡Hola! ¿En qué te ayudo?' },
-      ],
-    });
-
-    expect(prompt).toContain('Usuario: Hola');
-    expect(prompt).toContain('Asistente: ¡Hola! ¿En qué te ayudo?');
   });
 });
 

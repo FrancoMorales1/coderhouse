@@ -3,7 +3,8 @@ import { createLogger, env } from '@fi/core';
 import { cerrarConexion } from '@fi/db';
 import { crearClienteWhatsapp, type MensajeEntrante } from '@fi/whatsapp';
 
-import { buscarHorarios, guardarTurno, obtenerConversacion, obtenerHistorial } from './contexto.js';
+import { obtenerContextoDeOpcion } from './contexto.js';
+import { mensajeParaIA, parsearOpcion, TEXTO_MENU } from './menu.js';
 import { formatearRespuesta, MENSAJE_ERROR } from './respuesta.js';
 import { iniciarScraping } from './scraping.js';
 
@@ -32,34 +33,27 @@ function excedeLimite(jid: string): boolean {
   return false;
 }
 
-/**
- * El corazón del bot: mensaje + contexto + horarios de la BBDD -> IA -> respuesta.
- */
 async function responder(mensaje: MensajeEntrante): Promise<string> {
   if (excedeLimite(mensaje.jid)) {
     log.warn({ jid: mensaje.jid }, 'Rate limit alcanzado');
     return MENSAJE_RATE_LIMIT;
   }
-  const conversacionId = await obtenerConversacion(mensaje.jid, mensaje.nombre);
 
-  const [documentos, historial] = await Promise.all([
-    buscarHorarios(mensaje.texto),
-    obtenerHistorial(conversacionId),
-  ]);
+  const opcion = parsearOpcion(mensaje.texto);
 
-  await guardarTurno(conversacionId, 'usuario', mensaje.texto);
+  if (!opcion) {
+    return TEXTO_MENU;
+  }
 
-  const respuesta = await ia.responder({ mensaje: mensaje.texto, historial, documentos });
-  const texto = formatearRespuesta(respuesta);
-
-  await guardarTurno(conversacionId, 'asistente', texto);
+  const documentos = await obtenerContextoDeOpcion(opcion.numero, opcion.consulta);
+  const respuesta = await ia.responder({ mensaje: mensajeParaIA(opcion), documentos });
 
   log.info(
-    { jid: mensaje.jid, contexto: documentos.length, turnos: historial.length },
+    { jid: mensaje.jid, opcion: opcion.numero, contexto: documentos.length },
     'Consulta respondida',
   );
 
-  return texto;
+  return formatearRespuesta(respuesta);
 }
 
 const whatsapp = crearClienteWhatsapp({
