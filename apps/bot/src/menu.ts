@@ -27,7 +27,7 @@ export function parsearOpcion(mensaje: string): OpcionSeleccionada | null {
   if (!match) return null;
   return {
     numero: Number(match[1]) as NumeroOpcion,
-    consulta: match[2].trim(),
+    consulta: (match[2] ?? '').trim(),
   };
 }
 
