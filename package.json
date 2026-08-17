@@ -1,0 +1,53 @@
+{
+  "name": "@fi/monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bot de WhatsApp con IA para la Facultad de Ingeniería - UNMdP",
+  "license": "MIT",
+  "packageManager": "pnpm@10.24.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "build:clean": "tsc -b --clean && pnpm build",
+    "dev": "pnpm --filter @fi/bot dev",
+    "typecheck": "tsc -b --force",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check": "pnpm format:check && pnpm build && pnpm lint && pnpm test",
+    "clean": "tsc -b --clean && rimraf \"{apps,packages}/*/dist\" \"{apps,packages}/*/*.tsbuildinfo\" coverage",
+    "db:generate": "pnpm --filter @fi/db generate",
+    "db:migrate": "pnpm --filter @fi/db migrate",
+    "db:studio": "pnpm --filter @fi/db studio",
+    "services:up": "docker compose up -d",
+    "services:down": "docker compose down",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
+    "@eslint/js": "catalog:",
+    "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "eslint": "catalog:",
+    "eslint-config-prettier": "catalog:",
+    "eslint-import-resolver-typescript": "catalog:",
+    "eslint-plugin-import-x": "catalog:",
+    "globals": "catalog:",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
+    "prettier": "catalog:",
+    "rimraf": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,37 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# build
+dist/
+build/
+*.tsbuildinfo
+
+# tests
+coverage/
+.vitest-reports/
+
+# env
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+logs/
+
+# runtime del bot
+.auth/
+auth_info*/
+sessions/
+.cache/
+downloads/
+tmp/
+
+# editores / SO
+.DS_Store
+Thumbs.db
+.idea/
+*.swp

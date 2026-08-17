@@ -1,0 +1,11 @@
+# LF en el repo siempre, aunque el dev esté en Windows con core.autocrlf=true.
+# Sin esto, Prettier (endOfLine: lf) falla apenas alguien clona desde Windows.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.pdf binary
+*.ico binary
+
+pnpm-lock.yaml linguist-generated=true
+packages/db/drizzle/** linguist-generated=true
