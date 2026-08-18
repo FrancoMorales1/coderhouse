@@ -7,6 +7,7 @@ import type { ConsultaIA } from './types.js';
 const consultaBase: ConsultaIA = {
   mensaje: '¿Cuándo son las inscripciones a cursadas?',
   documentos: [],
+  instruccionSistema: 'Instrucción de prueba.',
 };
 
 describe('construirPrompt', () => {

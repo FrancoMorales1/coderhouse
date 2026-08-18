@@ -9,6 +9,7 @@ export interface FragmentoContexto {
 export interface ConsultaIA {
   mensaje: string;
   documentos: FragmentoContexto[];
+  instruccionSistema: string;
 }
 
 export interface RespuestaIA {

@@ -1,7 +1,7 @@
 import { AiError, createLogger, env } from '@fi/core';
 import { GoogleGenAI } from '@google/genai';
 
-import { construirPrompt, extraerFuentes, INSTRUCCION_SISTEMA } from './prompt.js';
+import { construirPrompt, extraerFuentes } from './prompt.js';
 
 import type { ConsultaIA, ProveedorIA, RespuestaIA } from './types.js';
 
@@ -22,7 +22,7 @@ export function crearProveedorGemini(
           model: modelo,
           contents: prompt,
           config: {
-            systemInstruction: INSTRUCCION_SISTEMA,
+            systemInstruction: consulta.instruccionSistema,
             temperature: 0.2,
             maxOutputTokens: 1_024,
           },

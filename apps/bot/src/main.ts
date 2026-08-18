@@ -1,4 +1,4 @@
-import { crearProveedorGemini } from '@fi/ai';
+import { crearProveedorGemini, instruccionParaOpcion } from '@fi/ai';
 import { createLogger, env } from '@fi/core';
 import { cerrarConexion } from '@fi/db';
 import { crearClienteWhatsapp, type MensajeEntrante } from '@fi/whatsapp';
@@ -46,7 +46,11 @@ async function responder(mensaje: MensajeEntrante): Promise<string> {
   }
 
   const documentos = await obtenerContextoDeOpcion(opcion.numero, opcion.consulta);
-  const respuesta = await ia.responder({ mensaje: mensajeParaIA(opcion), documentos });
+  const respuesta = await ia.responder({
+    mensaje: mensajeParaIA(opcion),
+    documentos,
+    instruccionSistema: instruccionParaOpcion(opcion.numero),
+  });
 
   log.info(
     { jid: mensaje.jid, opcion: opcion.numero, contexto: documentos.length },
