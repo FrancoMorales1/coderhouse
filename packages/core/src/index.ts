@@ -6,5 +6,7 @@ export {
   ScrapperError,
   AiError,
   WhatsappError,
+  TelegramError,
   isRetryable,
 } from './errors.js';
+export type { MensajeEntrante, ManejadorMensaje, ClienteMensajeria } from './mensajeria.js';

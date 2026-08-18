@@ -19,6 +19,7 @@
     "@fi/db": "workspace:*",
     "@fi/queue": "workspace:*",
     "@fi/scrapper": "workspace:*",
+    "@fi/telegram": "workspace:*",
     "@fi/whatsapp": "workspace:*",
     "bullmq": "catalog:",
     "drizzle-orm": "catalog:"

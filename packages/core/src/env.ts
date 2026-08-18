@@ -37,10 +37,20 @@ const envSchema = z.object({
 
   // Gemini
   GEMINI_API_KEY: z.string().min(1),
-  GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
+  // Solo se permiten modelos de la familia Flash (gratuita). Los modelos Pro/Ultra son de pago.
+  GEMINI_MODEL: z
+    .string()
+    .default('gemini-2.5-flash')
+    .refine(
+      (m) => /^gemini-\d+\.\d+-flash/i.test(m),
+      'Solo se permiten modelos gratuitos (familia Flash). Ejemplo: gemini-2.5-flash',
+    ),
 
   // WhatsApp / Baileys
   WHATSAPP_SESSION_PATH: z.string().default('./.auth'),
+
+  // Telegram
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
 
   // Scrapper: sistema de reserva de salas (MRBS) de la Facultad
   SCRAPPER_BASE_URL: z.url().default('https://salas.fi.mdp.edu.ar/index.php'),

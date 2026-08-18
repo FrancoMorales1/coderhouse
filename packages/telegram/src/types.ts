@@ -1,5 +1,5 @@
 export type {
   MensajeEntrante,
   ManejadorMensaje,
-  ClienteMensajeria as ClienteWhatsapp,
+  ClienteMensajeria as ClienteTelegram,
 } from '@fi/core';

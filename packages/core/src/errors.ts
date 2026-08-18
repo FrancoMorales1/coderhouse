@@ -35,6 +35,12 @@ export class WhatsappError extends AppError {
   }
 }
 
+export class TelegramError extends AppError {
+  constructor(message: string, cause?: unknown) {
+    super(message, { code: 'TELEGRAM', retryable: true, cause });
+  }
+}
+
 export function isRetryable(error: unknown): boolean {
   return error instanceof AppError && error.retryable;
 }

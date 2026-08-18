@@ -1,7 +1,8 @@
 import { crearProveedorGemini, instruccionParaOpcion } from '@fi/ai';
-import { createLogger, env } from '@fi/core';
+import { createLogger, env, type ClienteMensajeria, type MensajeEntrante } from '@fi/core';
 import { cerrarConexion } from '@fi/db';
-import { crearClienteWhatsapp, type MensajeEntrante } from '@fi/whatsapp';
+import { crearClienteTelegram } from '@fi/telegram';
+import { crearClienteWhatsapp } from '@fi/whatsapp';
 
 import { obtenerContextoDeOpcion } from './contexto.js';
 import { mensajeParaIA, parsearOpcion, TEXTO_MENU } from './menu.js';
@@ -60,16 +61,22 @@ async function responder(mensaje: MensajeEntrante): Promise<string> {
   return formatearRespuesta(respuesta);
 }
 
-const whatsapp = crearClienteWhatsapp({
-  onMensaje: async (mensaje) => {
+function manejadorMensaje(plataforma: string) {
+  return async (mensaje: MensajeEntrante): Promise<string | undefined> => {
     try {
       return await responder(mensaje);
     } catch (error) {
-      log.error({ err: error, jid: mensaje.jid }, 'No se pudo responder');
+      log.error({ err: error, jid: mensaje.jid, plataforma }, 'No se pudo responder');
       return MENSAJE_ERROR;
     }
-  },
-});
+  };
+}
+
+const whatsapp = crearClienteWhatsapp({ onMensaje: manejadorMensaje('whatsapp') });
+
+const telegram: ClienteMensajeria | undefined = env.TELEGRAM_BOT_TOKEN
+  ? crearClienteTelegram({ onMensaje: manejadorMensaje('telegram') })
+  : undefined;
 
 const scraping = await iniciarScraping();
 
@@ -77,6 +84,7 @@ async function apagar(senal: string): Promise<void> {
   log.info({ senal }, 'Apagando el bot');
   try {
     await whatsapp.desconectar();
+    await telegram?.desconectar();
     await scraping.worker.close();
     await scraping.cola.close();
     await cerrarConexion();
@@ -92,4 +100,11 @@ for (const senal of ['SIGINT', 'SIGTERM'] as const) {
 }
 
 log.info({ entorno: env.NODE_ENV, modelo: env.GEMINI_MODEL }, 'Iniciando bot de la FI - UNMdP');
+
 await whatsapp.conectar();
+
+if (telegram) {
+  await telegram.conectar();
+} else {
+  log.warn('TELEGRAM_BOT_TOKEN no configurado: bot de Telegram inactivo');
+}
