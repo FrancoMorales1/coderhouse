@@ -1,4 +1,4 @@
-import { createLogger, env, WhatsappError } from '@fi/core';
+import { aTextoPlano, createLogger, env, WhatsappError } from '@fi/core';
 import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
@@ -13,7 +13,7 @@ import qrcode from 'qrcode-terminal';
 
 import { esGrupo, extraerTexto, normalizarJid } from './mensaje.js';
 
-import type { ClienteWhatsapp, ManejadorMensaje } from './types.js';
+import type { ClienteWhatsapp, ManejadorMensaje, Salida } from './types.js';
 import type { Boom } from '@hapi/boom';
 
 const log = createLogger('whatsapp');
@@ -113,9 +113,11 @@ export function crearClienteWhatsapp(opciones: OpcionesCliente): ClienteWhatsapp
     }
   }
 
-  async function enviar(jid: string, texto: string): Promise<void> {
+  // WhatsApp (Baileys) no tiene botones ni celdas de respuesta: la salida se
+  // aplana a texto y las opciones vuelven a ser una lista numerada.
+  async function enviar(jid: string, salida: Salida): Promise<void> {
     if (!socket) throw new WhatsappError('El cliente no está conectado');
-    await socket.sendMessage(jid, { text: texto });
+    await socket.sendMessage(jid, { text: aTextoPlano(salida) });
   }
 
   async function desconectar(): Promise<void> {

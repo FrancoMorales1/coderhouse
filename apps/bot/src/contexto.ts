@@ -1,14 +1,31 @@
-import { db } from '@fi/db';
+import { db, FTS, tsqueryOr } from '@fi/db';
 import { fechaEnZona, nombreDiaSemana, sumarDias } from '@fi/scrapper';
 import { sql } from 'drizzle-orm';
 
-import type { FragmentoContexto } from '@fi/ai';
+import type { FragmentoContexto, ProveedorIA } from '@fi/ai';
+
+import { validarContraCatalogo } from './materias.js';
 
 import type { NumeroOpcion } from './menu.js';
 
-const MAX_CLASES = 30;
+/** Ventana de la agenda: es lo que trae el scrapeo diario. */
+const DIAS_AGENDA = 7;
+/** Cuántos días se vuelcan cuando el alumno no nombra ninguna materia. */
+const DIAS_AGENDA_SIN_FILTRO = 2;
+
+const MAX_CLASES_MATERIA = 60;
+const MAX_CLASES_AGENDA = 200;
+/**
+ * Tope de seguridad, no un recorte esperado: son ~300 materias por semana y el
+ * catálogo tiene que ir entero, porque es lo único con lo que el modelo elige.
+ * Recortarlo sería volver a esconderle materias que sí se dictan.
+ */
+const MAX_MATERIAS_CATALOGO = 1_000;
 const MAX_FRAGMENTOS_MATERIAL = 3;
-const MAX_CHARS_MATERIAL = 3_000;
+const MAX_TITULOS_MATERIAL = 50;
+
+const FUENTE_SALAS = 'https://salas.fi.mdp.edu.ar/';
+const FUENTE_FACULTAD = 'https://www.fi.mdp.edu.ar/';
 
 // ── Horarios ─────────────────────────────────────────────────────────────────
 
@@ -44,46 +61,161 @@ function describir(fila: FilaCursada): string {
   );
 }
 
+const COLUMNAS = sql`fecha, dia_semana, hora_inicio, hora_fin, materia, titulo_crudo, tipo, comision, aula`;
+/** Materia + título crudo: MRBS abrevia, y el crudo conserva lo que la normalización pierde. */
+const TEXTO_BUSCABLE = sql`(materia || ' ' || titulo_crudo)`;
+
+async function contarClases(desde: string, hasta: string): Promise<number> {
+  const { rows } = await db.execute<{ total: string }>(sql`
+    SELECT count(*)::text AS total FROM cursadas WHERE fecha >= ${desde} AND fecha <= ${hasta}
+  `);
+  return Number(rows[0]?.total ?? 0);
+}
+
+async function agenda(desde: string, hasta: string): Promise<FilaCursada[]> {
+  const { rows } = await db.execute<FilaCursada>(sql`
+    SELECT ${COLUMNAS} FROM cursadas
+    WHERE fecha >= ${desde} AND fecha <= ${hasta}
+    ORDER BY fecha, hora_inicio
+    LIMIT ${MAX_CLASES_AGENDA}
+  `);
+  return rows;
+}
+
 /**
- * Busca clases por full-text en español, acotado a los próximos 7 días.
- * Si la consulta no matchea nada, devuelve toda la agenda del rango.
+ * Red de contención: busca el texto literal de la consulta, exigiendo todas sus
+ * palabras. Solo corre si el modelo no reconoció ninguna materia, para que un
+ * pedido que nombra la materia tal cual no dependa de que la IA acierte.
  */
-async function buscarHorarios(consulta: string): Promise<FragmentoContexto[]> {
+async function porTodasLasPalabras(
+  desde: string,
+  hasta: string,
+  consulta: string,
+): Promise<FilaCursada[]> {
+  const { rows } = await db.execute<FilaCursada>(sql`
+    SELECT ${COLUMNAS} FROM cursadas
+    WHERE fecha >= ${desde} AND fecha <= ${hasta}
+      AND to_tsvector(${FTS}, ${TEXTO_BUSCABLE}) @@ plainto_tsquery(${FTS}, ${consulta})
+    ORDER BY fecha, hora_inicio
+    LIMIT ${MAX_CLASES_MATERIA}
+  `);
+  return rows;
+}
+
+/** Trae las clases de materias ya elegidas, por nombre exacto del catálogo. */
+async function clasesDeMaterias(
+  desde: string,
+  hasta: string,
+  materias: string[],
+): Promise<FilaCursada[]> {
+  const { rows } = await db.execute<FilaCursada>(sql`
+    SELECT ${COLUMNAS} FROM cursadas
+    WHERE fecha >= ${desde} AND fecha <= ${hasta}
+      AND materia = ANY(${materias}::text[])
+    ORDER BY fecha, hora_inicio
+    LIMIT ${MAX_CLASES_MATERIA}
+  `);
+  return rows;
+}
+
+/** Los nombres de materia que sí tienen clases, para poder sugerir alternativas. */
+async function catalogoDeMaterias(desde: string, hasta: string): Promise<string[]> {
+  const { rows } = await db.execute<{ materia: string }>(sql`
+    SELECT DISTINCT materia FROM cursadas
+    WHERE fecha >= ${desde} AND fecha <= ${hasta}
+    ORDER BY materia
+    LIMIT ${MAX_MATERIAS_CATALOGO}
+  `);
+  return rows.map((fila) => fila.materia);
+}
+
+/**
+ * Busca horarios en dos pasos, porque emparejar lo que escribe un alumno con el
+ * nombre real de una materia es un problema de significado, no de texto:
+ *
+ * 1. Se le pasa al modelo el catálogo entero de materias con clases cargadas
+ *    —solo los nombres, sin horarios— y elige cuál pidió. Así "seguridad
+ *    informatica" cae en "gestion de seguridad informatica y seguridad en
+ *    sistemas", que no comparte casi ninguna palabra con la consulta y que
+ *    ninguna búsqueda por texto iba a encontrar.
+ * 2. Recién con ese nombre exacto se van a buscar las clases a la base, y esas
+ *    clases son el contexto con el que se arma la respuesta final.
+ *
+ * El fragmento **dice siempre qué encontró**: un contexto sin etiqueta se lee
+ * como "esto es todo lo que hay" y termina en un "no tengo esa información"
+ * que no ayuda a nadie.
+ */
+async function buscarHorarios(consulta: string, ia: ProveedorIA): Promise<FragmentoContexto[]> {
   const hoy = fechaEnZona(new Date());
-  const hasta = sumarDias(hoy, 7);
+  const hasta = sumarDias(hoy, DIAS_AGENDA);
 
-  const porMateria =
-    consulta.length > 0
-      ? await db.execute<FilaCursada>(sql`
-          SELECT fecha, dia_semana, hora_inicio, hora_fin, materia, titulo_crudo, tipo, comision, aula
-          FROM cursadas
-          WHERE fecha >= ${hoy} AND fecha <= ${hasta}
-            AND to_tsvector('spanish', materia) @@ plainto_tsquery('spanish', ${consulta})
-          ORDER BY fecha, hora_inicio
-          LIMIT ${MAX_CLASES}
-        `)
-      : { rows: [] };
+  if ((await contarClases(hoy, hasta)) === 0) {
+    return [
+      {
+        titulo: 'Horarios de cursadas: sin datos cargados',
+        url: FUENTE_SALAS,
+        contenido:
+          `La base no tiene ninguna clase entre el ${hoy} y el ${hasta}. No es que la ` +
+          'materia no exista: todavía no se cargaron los horarios de esas fechas.',
+      },
+    ];
+  }
 
+  if (consulta.length === 0) {
+    const hastaCorto = sumarDias(hoy, DIAS_AGENDA_SIN_FILTRO);
+    const filas = await agenda(hoy, hastaCorto);
+
+    return [
+      {
+        titulo: `Agenda de clases del ${hoy} al ${hastaCorto}`,
+        url: FUENTE_SALAS,
+        contenido:
+          'Clases de los próximos días. Hay más adelante en la semana: para verlas ' +
+          `hay que nombrar la materia.\n\n${filas.map(describir).join('\n')}`,
+      },
+    ];
+  }
+
+  // Paso 1: el modelo elige, con el catálogo entero como única referencia.
+  const catalogo = await catalogoDeMaterias(hoy, hasta);
+  const propuestas = await ia.identificarMaterias({ consulta, catalogo });
+  const elegidas = validarContraCatalogo(propuestas, catalogo);
+
+  // Paso 2: recién ahora se van a buscar las clases.
   const filas =
-    porMateria.rows.length > 0
-      ? porMateria.rows
-      : (
-          await db.execute<FilaCursada>(sql`
-            SELECT fecha, dia_semana, hora_inicio, hora_fin, materia, titulo_crudo, tipo, comision, aula
-            FROM cursadas
-            WHERE fecha >= ${hoy} AND fecha <= ${hasta}
-            ORDER BY fecha, hora_inicio
-            LIMIT ${MAX_CLASES}
-          `)
-        ).rows;
+    elegidas.length > 0
+      ? await clasesDeMaterias(hoy, hasta, elegidas)
+      : await porTodasLasPalabras(hoy, hasta, consulta);
 
-  if (filas.length === 0) return [];
+  if (filas.length > 0) {
+    // Sale de las filas y no de `elegidas` para que también sirva cuando la que
+    // encontró la materia fue la red de contención.
+    const materias = [...new Set(filas.map((fila) => fila.materia))];
 
+    return [
+      {
+        titulo: `Horarios de ${materias.map((m) => `"${m}"`).join(', ')}`,
+        url: FUENTE_SALAS,
+        contenido:
+          `El alumno escribió "${consulta}". En el sistema esa materia figura como ` +
+          `${materias.map((m) => `"${m}"`).join(' y ')}. Si el nombre no es el que usó ` +
+          `él, nombrásela completa al responder para que sepa cuál es.\n\n` +
+          filas.map(describir).join('\n'),
+      },
+    ];
+  }
+
+  // Ninguna materia elegida: puede que no exista, o que el modelo no la haya
+  // reconocido. Va el catálogo entero para que la respuesta final igual pueda
+  // ofrecer lo más parecido en vez de cortar la conversación.
   return [
     {
-      titulo: `Horarios de cursadas del ${hoy} al ${hasta}`,
-      url: 'https://salas.fi.mdp.edu.ar/',
-      contenido: filas.map(describir).join('\n'),
+      titulo: `SIN COINCIDENCIAS para "${consulta}"`,
+      url: FUENTE_SALAS,
+      contenido:
+        `Ninguna materia con clases entre el ${hoy} y el ${hasta} corresponde a ` +
+        `"${consulta}". Estas son todas las que sí se dictan en ese rango; si alguna se ` +
+        `parece a lo que buscaba, sugerísela.\n\n${catalogo.map((m) => `- ${m}`).join('\n')}`,
     },
   ];
 }
@@ -95,36 +227,77 @@ interface FilaMaterial extends Record<string, unknown> {
   contenido: string;
 }
 
+const TEXTO_MATERIAL = sql`(titulo || ' ' || contenido)`;
+
+/**
+ * El material se guarda un PDF entero por fila (el calendario académico son
+ * decenas de miles de caracteres). No se recorta acá a propósito: el único
+ * corte lo hace `construirPrompt` con el límite del modelo. Cortando en los dos
+ * lados el de acá ganaba —eran 3.000 caracteres, o sea la primera página del
+ * calendario— y el bot decía "no tengo esa información" sobre cualquier fecha
+ * que cayera más adelante.
+ */
+function aFragmento(fila: FilaMaterial): FragmentoContexto {
+  return { titulo: fila.titulo, url: FUENTE_FACULTAD, contenido: fila.contenido };
+}
+
+/**
+ * Mismo esquema que los horarios: exacto → parcial → aviso explícito.
+ * El material sale de PDFs llenos de acentos, así que arrastraba el mismo
+ * problema de `to_tsvector('spanish', …)` que las cursadas.
+ */
 async function buscarEnMaterial(
   categorias: string[],
   consulta: string,
 ): Promise<FragmentoContexto[]> {
-  const filas =
-    consulta.length > 0
-      ? await db.execute<FilaMaterial>(sql`
-          SELECT titulo, contenido
-          FROM material
-          WHERE categoria = ANY(${categorias}::text[])
-            AND to_tsvector('spanish', titulo || ' ' || contenido)
-                @@ plainto_tsquery('spanish', ${consulta})
-          ORDER BY ts_rank(
-            to_tsvector('spanish', titulo || ' ' || contenido),
-            plainto_tsquery('spanish', ${consulta})
-          ) DESC
-          LIMIT ${MAX_FRAGMENTOS_MATERIAL}
-        `)
-      : await db.execute<FilaMaterial>(sql`
-          SELECT titulo, contenido
-          FROM material
-          WHERE categoria = ANY(${categorias}::text[])
-          LIMIT ${MAX_FRAGMENTOS_MATERIAL}
-        `);
+  if (consulta.length === 0) {
+    const { rows } = await db.execute<FilaMaterial>(sql`
+      SELECT titulo, contenido FROM material
+      WHERE categoria = ANY(${categorias}::text[])
+      LIMIT ${MAX_FRAGMENTOS_MATERIAL}
+    `);
+    return rows.map(aFragmento);
+  }
 
-  return filas.rows.map((fila) => ({
-    titulo: fila.titulo,
-    url: 'https://www.fi.mdp.edu.ar/',
-    contenido: fila.contenido.slice(0, MAX_CHARS_MATERIAL),
-  }));
+  const exactas = await db.execute<FilaMaterial>(sql`
+    SELECT titulo, contenido FROM material
+    WHERE categoria = ANY(${categorias}::text[])
+      AND to_tsvector(${FTS}, ${TEXTO_MATERIAL}) @@ plainto_tsquery(${FTS}, ${consulta})
+    ORDER BY ts_rank(to_tsvector(${FTS}, ${TEXTO_MATERIAL}), plainto_tsquery(${FTS}, ${consulta})) DESC
+    LIMIT ${MAX_FRAGMENTOS_MATERIAL}
+  `);
+  if (exactas.rows.length > 0) return exactas.rows.map(aFragmento);
+
+  const tsq = tsqueryOr(consulta);
+  if (tsq) {
+    const parciales = await db.execute<FilaMaterial>(sql`
+      SELECT titulo, contenido FROM material
+      WHERE categoria = ANY(${categorias}::text[])
+        AND to_tsvector(${FTS}, ${TEXTO_MATERIAL}) @@ to_tsquery(${FTS}, ${tsq})
+      ORDER BY ts_rank(to_tsvector(${FTS}, ${TEXTO_MATERIAL}), to_tsquery(${FTS}, ${tsq})) DESC
+      LIMIT ${MAX_FRAGMENTOS_MATERIAL}
+    `);
+    if (parciales.rows.length > 0) return parciales.rows.map(aFragmento);
+  }
+
+  const { rows: titulos } = await db.execute<{ titulo: string }>(sql`
+    SELECT titulo FROM material
+    WHERE categoria = ANY(${categorias}::text[])
+    ORDER BY titulo
+    LIMIT ${MAX_TITULOS_MATERIAL}
+  `);
+
+  return [
+    {
+      titulo: `SIN COINCIDENCIAS para "${consulta}"`,
+      url: FUENTE_FACULTAD,
+      contenido:
+        `No hay nada sobre "${consulta}" en esta parte de la base de conocimiento. Los ` +
+        'documentos disponibles son estos; si alguno cubre lo que preguntó el alumno, ' +
+        'ofrecéselo, y si no, decile que ese dato todavía no está cargado.\n\n' +
+        titulos.map((fila) => `- ${fila.titulo}`).join('\n'),
+    },
+  ];
 }
 
 // ── Router por opción de menú ─────────────────────────────────────────────────
@@ -132,10 +305,11 @@ async function buscarEnMaterial(
 export async function obtenerContextoDeOpcion(
   opcion: NumeroOpcion,
   consulta: string,
+  ia: ProveedorIA,
 ): Promise<FragmentoContexto[]> {
   switch (opcion) {
     case 1:
-      return buscarHorarios(consulta);
+      return buscarHorarios(consulta, ia);
     case 2:
       return buscarEnMaterial(['calendario'], consulta);
     case 3:

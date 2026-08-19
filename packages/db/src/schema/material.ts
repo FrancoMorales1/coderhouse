@@ -27,9 +27,9 @@ export const material = pgTable(
   },
   (table) => [
     index('material_categoria_idx').on(table.categoria),
-    index('material_fts_idx').using(
+    index('material_busqueda_idx').using(
       'gin',
-      sql`to_tsvector('spanish', ${table.titulo} || ' ' || ${table.contenido})`,
+      sql`to_tsvector('public.espanol_sin_acentos', ${table.titulo} || ' ' || ${table.contenido})`,
     ),
   ],
 );

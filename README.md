@@ -1,26 +1,28 @@
-# Bot de WhatsApp - Facultad de Ingeniería, UNMdP
+# Bot de WhatsApp y Telegram - Facultad de Ingeniería, UNMdP
 
-Asistente de WhatsApp que responde **horarios de cursadas** de la Facultad de
-Ingeniería de la Universidad Nacional de Mar del Plata: qué día, a qué hora y en
-qué aula se dicta cada materia.
+Asistente de WhatsApp y Telegram que responde **horarios de cursadas** de la
+Facultad de Ingeniería de la Universidad Nacional de Mar del Plata: qué día, a
+qué hora y en qué aula se dicta cada materia.
 
 Los horarios salen del sistema de reserva de salas de la Facultad
 ([salas.fi.mdp.edu.ar](https://salas.fi.mdp.edu.ar/)), que corre MRBS. Un job
-diario a las 4am trae los próximos 7 días y los deja en Postgres; cuando un alumno
-pregunta, el bot arma el contexto con esos horarios más el historial del chat y se
-lo pasa a Gemini.
+diario a las 4am trae los próximos 7 días y los deja en Postgres. Al calendario
+académico, los planes de estudio y la información de la facultad los carga
+`scripts/seed-material.mjs` desde `material/`. Cuando un alumno pregunta, el bot
+busca en esa base, arma el contexto y se lo pasa a Gemini.
 
 ```
-WhatsApp ──▶ @fi/bot ──▶ contexto (horarios en Postgres + historial)
-                │
-                └──▶ @fi/ai ──▶ Gemini ──▶ respuesta ──▶ WhatsApp
+WhatsApp ─┐                ┌──▶ contexto (horarios y material en Postgres)
+          ├──▶ @fi/bot ────┤
+Telegram ─┘                └──▶ @fi/ai ──▶ Gemini ──▶ respuesta ──▶ canal
 
 @fi/queue (cron 4am) ──▶ @fi/scrapper ──▶ MRBS ──▶ Postgres
 ```
 
-> **Alcance actual.** El bot responde solo sobre horarios de cursadas. Ante
-> cualquier otro tema (inscripciones, trámites, finales) avisa que no sabe y
-> deriva a la web oficial. Es deliberado: una sola fuente de datos, verificable.
+> **Alcance actual.** El bot responde sobre las cuatro opciones del menú:
+> horarios, calendario académico, planes de estudio e información de la facultad.
+> Ante cualquier otro tema (inscripciones en SIU, mesas de finales) avisa que no
+> sabe y deriva a la web oficial. Es deliberado: solo fuentes verificables.
 
 ## Estructura
 
@@ -28,6 +30,7 @@ WhatsApp ──▶ @fi/bot ──▶ contexto (horarios en Postgres + historial)
 | -------------- | --------------------------------------------------------- |
 | `apps/bot`     | Orquestador: cablea los submódulos y programa el scraping |
 | `@fi/whatsapp` | Conexión Baileys, recepción y envío de mensajes           |
+| `@fi/telegram` | Conexión grammy: menú de botones y celdas de texto        |
 | `@fi/ai`       | Armado del prompt y consulta a Gemini                     |
 | `@fi/scrapper` | Lectura de la grilla de MRBS y persistencia de horarios   |
 | `@fi/db`       | Esquema Drizzle y acceso a Postgres                       |
@@ -54,6 +57,14 @@ SCRAPPER_AL_INICIAR=true pnpm dev   # scrapea al toque y muestra el QR
 
 Sin `SCRAPPER_AL_INICIAR` la base arranca vacía y el bot no sabe ningún horario
 hasta las 4am.
+
+`pnpm db:migrate` corre la migración `0002_busqueda_sin_acentos`, que crea las
+extensiones `unaccent` y `pg_trgm`. Eso pide un rol con permiso de
+`CREATE EXTENSION` (el `fi` del docker-compose lo tiene; en un Postgres
+gestionado hay que habilitarlas desde el panel).
+
+Para responder por Telegram hace falta `TELEGRAM_BOT_TOKEN` (lo da @BotFather).
+Sin token el bot arranca igual y responde solo por WhatsApp.
 
 Requisitos: Node >= 24 (`nvm use`), pnpm >= 10, Docker.
 
@@ -98,6 +109,72 @@ Detalles que ya están contemplados y testeados:
 Los tests corren contra un
 [HTML real del sitio](packages/scrapper/src/__fixtures__/) guardado como fixture,
 así que verifican el parseo sin depender de la red.
+
+## Cómo busca lo que le preguntan
+
+### Horarios: la materia la elige la IA, no el SQL
+
+Un alumno escribe "seguridad informatica" y la materia se llama **"gestion de
+seguridad informatica y seguridad en sistemas"**. Comparten dos palabras de
+nueve: ninguna búsqueda por texto —ni FTS, ni trigramas, ni Levenshtein— la
+encuentra sin traerse media facultad de arrastre. Es un problema de significado,
+así que lo resuelve el modelo, en dos pasos:
+
+1. **Elegir la materia.** Se le pasa el catálogo entero de materias con clases
+   cargadas —solo los nombres, **sin horarios**— y la consulta del alumno.
+   Devuelve JSON (`responseSchema`, `temperature: 0`) con las materias del
+   catálogo que corresponden, de la más probable a la menos, o la lista vacía si
+   ninguna tiene que ver.
+2. **Buscar y responder.** Con ese nombre exacto se traen las clases de la base
+   (`WHERE materia = ANY(...)`) y esas clases —ahora sí con día, hora y aula—
+   son el contexto con el que el modelo arma la respuesta final.
+
+El paso 1 no puede confiarse a ciegas: el modelo a veces "arregla" el nombre que
+le pidieron copiar (le pone acentos, expande una abreviatura). Por eso
+[`validarContraCatalogo`](apps/bot/src/materias.ts) lo empareja de vuelta contra
+el catálogo, normalizando para comparar, y devuelve **la grafía que está en la
+base**. Lo que no matchea se descarta: una materia inventada daría cero filas y
+el bot diría que no hay clases de algo que sí se dicta.
+
+Si el modelo no reconoce nada queda una red de contención determinista —
+`plainto_tsquery` sobre el texto literal—, para que un pedido que nombra la
+materia tal cual no dependa de que la IA acierte. Y si tampoco eso encuentra,
+el fragmento sale marcado `SIN COINCIDENCIAS` con el catálogo entero, así la
+respuesta final puede sugerir lo más parecido en vez de cortar la conversación.
+
+### Material: cascada de texto
+
+El calendario, los planes y la info de la facultad siguen por búsqueda de texto:
+todas las palabras (`plainto_tsquery`), después alguna palabra (`to_tsquery` con
+OR, ordenado por `ts_rank`), y si no hay nada, `SIN COINCIDENCIAS` con los
+títulos disponibles.
+
+Todo corre sobre `espanol_sin_acentos` (`spanish` + `unaccent`). El diccionario
+`spanish` pelado stemea pero no normaliza acentos, y MRBS guarda los títulos
+como los tipeó cada docente: en la misma grilla conviven "Introducción a la
+Matemática Discreta" y "introduccion al modelado computacional". Sin `unaccent`,
+la mitad de las búsquedas no matcheaba nunca.
+
+En todos los casos el fragmento **le dice al modelo qué encontró la búsqueda**,
+porque un contexto sin etiqueta se lee como "esto es todo lo que hay" y termina
+en un "no tengo esa información" que no ayuda a nadie.
+
+## Interfaz
+
+En **Telegram** el menú son botones (`InlineKeyboard`). Al tocar uno, el bot
+manda un mensaje con `force_reply`: Telegram abre la celda de texto ya enfocada,
+con un placeholder de ejemplo, para agregar contexto —la materia, la carrera, el
+trámite— o mandar `-` para ver todo sin filtrar.
+
+Qué tema corresponde a lo que se escribió sale del propio hilo: el pedido lleva
+su etiqueta en la primera línea y la respuesta lo cita, así que no hace falta
+guardar estado y el flujo sobrevive a un reinicio. Como red de contención, el
+último tema elegido queda en memoria 15 minutos, para que un mensaje suelto
+—celda cancelada, o WhatsApp, que no tiene hilos— siga la conversación en curso.
+
+En **WhatsApp** no hay botones: `aTextoPlano` aplana la misma respuesta a la
+lista numerada de siempre. El bot decide _qué_ ofrecer; cada canal decide cómo
+lo dibuja.
 
 ## CI/CD
 
@@ -194,7 +271,12 @@ ya está en `material/`. Lo que falta agregar a esa carpeta antes del próximo s
 
 - El bot no distingue comisiones cuando el alumno no las nombra: si una materia
   tiene A1 y A2, las lista todas.
-- El menú de opciones y la tabla `material` están diseñados pero aún no
-  implementados; el bot responde en modo libre sin estructura de opciones.
+- WhatsApp no tiene botones: ahí el menú sigue siendo la lista numerada de
+  siempre (`1 análisis matemático`). La estructura de opciones es la misma que
+  en Telegram, solo cambia cómo se dibuja.
+- `seed-material.mjs` guarda cada PDF entero en una fila de `material`, sin
+  trocear. Se busca y se manda el documento completo, y lo que no entra en la
+  ventana del modelo se corta por el final. Falta chunkear por sección para que
+  la búsqueda devuelva el pedazo relevante en vez del documento entero.
 - El deploy en el servidor definitivo de la Facultad está pendiente; la imagen
   Docker se publica en GHCR pero no hay pipeline de deploy automático.

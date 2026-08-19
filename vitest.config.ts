@@ -28,6 +28,7 @@ export default defineConfig({
         'packages/scrapper/src/mrbs.ts',
         'packages/scrapper/src/persistir.ts',
         'packages/whatsapp/src/cliente.ts',
+        'packages/telegram/src/cliente.ts',
       ],
       // Umbral sobre la lógica pura, que es lo que sí tiene que estar testeado.
       thresholds: {
