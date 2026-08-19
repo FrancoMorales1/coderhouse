@@ -2,9 +2,9 @@ import { db, FTS, tsqueryOr } from '@fi/db';
 import { fechaEnZona, nombreDiaSemana, sumarDias } from '@fi/scrapper';
 import { sql } from 'drizzle-orm';
 
-import { validarContraCatalogo } from './materias.js';
-
 import type { FragmentoContexto, ProveedorIA } from '@fi/ai';
+
+import { validarContraCatalogo } from './materias.js';
 
 import type { NumeroOpcion } from './menu.js';
 

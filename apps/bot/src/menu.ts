@@ -68,7 +68,7 @@ function botones(): OpcionMenu[] {
 // ── Mensajes que manda el bot ────────────────────────────────────────────────
 
 /** El menú: botones en Telegram, lista numerada en WhatsApp. */
-export function menuInicial(nombre?: string | undefined): RespuestaSalida {
+export function menuInicial(nombre?: string): RespuestaSalida {
   const saludo = nombre ? `¡Hola, ${nombre}!` : '¡Hola!';
 
   return {

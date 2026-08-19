@@ -23,7 +23,14 @@ export type MarcadoDeRespuesta = InlineKeyboard | ForceReply;
 export function marcadoDeRespuesta(salida: RespuestaSalida): MarcadoDeRespuesta | undefined {
   if (salida.opciones && salida.opciones.length > 0) {
     const teclado = new InlineKeyboard();
-    for (const opcion of salida.opciones) teclado.text(opcion.etiqueta, opcion.id).row();
+
+    // El .row() va antes y no después: encadenarlo al último botón deja una
+    // fila vacía colgando al final del teclado.
+    for (const [indice, opcion] of salida.opciones.entries()) {
+      if (indice > 0) teclado.row();
+      teclado.text(opcion.etiqueta, opcion.id);
+    }
+
     return teclado;
   }
 

@@ -173,7 +173,7 @@ guardar estado y el flujo sobrevive a un reinicio. Como red de contención, el
 —celda cancelada, o WhatsApp, que no tiene hilos— siga la conversación en curso.
 
 En **WhatsApp** no hay botones: `aTextoPlano` aplana la misma respuesta a la
-lista numerada de siempre. El bot decide *qué* ofrecer; cada canal decide cómo
+lista numerada de siempre. El bot decide _qué_ ofrecer; cada canal decide cómo
 lo dibuja.
 
 ## CI/CD

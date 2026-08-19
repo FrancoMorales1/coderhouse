@@ -1,9 +1,9 @@
 import { createLogger, env, TelegramError } from '@fi/core';
 import { Bot } from 'grammy';
 
-import { marcadoDeRespuesta } from './teclado.js';
-
 import type { ClienteMensajeria, ManejadorMensaje, MensajeEntrante, Salida } from '@fi/core';
+
+import { marcadoDeRespuesta } from './teclado.js';
 
 const log = createLogger('telegram');
 
