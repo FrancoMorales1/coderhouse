@@ -9,4 +9,13 @@ export {
   TelegramError,
   isRetryable,
 } from './errors.js';
-export type { MensajeEntrante, ManejadorMensaje, ClienteMensajeria } from './mensajeria.js';
+export { aTextoPlano } from './mensajeria.js';
+export type {
+  ClienteMensajeria,
+  ManejadorMensaje,
+  MensajeEntrante,
+  OpcionMenu,
+  PedidoDeTexto,
+  RespuestaSalida,
+  Salida,
+} from './mensajeria.js';
