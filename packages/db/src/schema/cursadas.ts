@@ -52,7 +52,12 @@ export const cursadas = pgTable(
     // pero nunca dos veces en la misma fecha.
     uniqueIndex('cursadas_entry_fecha_idx').on(table.entryId, table.fecha),
     index('cursadas_fecha_idx').on(table.fecha, table.horaInicio),
-    index('cursadas_materia_idx').using('gin', sql`to_tsvector('spanish', ${table.materia})`),
+    // Búsqueda insensible a acentos (config creada en la migración 0002) sobre
+    // materia + título crudo: MRBS abrevia, y el crudo conserva lo abreviado.
+    index('cursadas_busqueda_idx').using(
+      'gin',
+      sql`to_tsvector('public.espanol_sin_acentos', ${table.materia} || ' ' || ${table.tituloCrudo})`,
+    ),
   ],
 );
 
