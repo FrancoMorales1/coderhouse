@@ -1,13 +1,27 @@
 import { crearProveedorGemini, instruccionParaOpcion } from '@fi/ai';
-import { createLogger, env, type ClienteMensajeria, type MensajeEntrante } from '@fi/core';
+import {
+  createLogger,
+  env,
+  type ClienteMensajeria,
+  type MensajeEntrante,
+  type Salida,
+} from '@fi/core';
 import { cerrarConexion } from '@fi/db';
 import { crearClienteTelegram } from '@fi/telegram';
 import { crearClienteWhatsapp } from '@fi/whatsapp';
 
 import { obtenerContextoDeOpcion } from './contexto.js';
-import { mensajeParaIA, parsearOpcion, TEXTO_MENU } from './menu.js';
+import {
+  botonesDeSeguimiento,
+  COMANDOS,
+  interpretar,
+  mensajeParaIA,
+  menuInicial,
+  pedidoDeConsulta,
+} from './menu.js';
 import { formatearRespuesta, MENSAJE_ERROR } from './respuesta.js';
 import { iniciarScraping } from './scraping.js';
+import { olvidarOpcion, opcionVigente, recordarOpcion } from './sesion.js';
 
 const log = createLogger('bot');
 
@@ -34,35 +48,49 @@ function excedeLimite(jid: string): boolean {
   return false;
 }
 
-async function responder(mensaje: MensajeEntrante): Promise<string> {
+async function responder(mensaje: MensajeEntrante): Promise<Salida> {
   if (excedeLimite(mensaje.jid)) {
     log.warn({ jid: mensaje.jid }, 'Rate limit alcanzado');
     return MENSAJE_RATE_LIMIT;
   }
 
-  const opcion = parsearOpcion(mensaje.texto);
+  const intencion = interpretar(mensaje, opcionVigente(mensaje.jid));
 
-  if (!opcion) {
-    return TEXTO_MENU;
+  if (intencion.tipo === 'menu') {
+    olvidarOpcion(mensaje.jid);
+    return menuInicial(mensaje.nombre);
   }
 
-  const documentos = await obtenerContextoDeOpcion(opcion.numero, opcion.consulta);
+  recordarOpcion(mensaje.jid, intencion.numero);
+
+  // Eligió tema: se le abre la celda para que agregue contexto antes de buscar.
+  if (intencion.tipo === 'pedir') {
+    return pedidoDeConsulta(intencion.numero);
+  }
+
+  const documentos = await obtenerContextoDeOpcion(intencion.numero, intencion.consulta, ia);
   const respuesta = await ia.responder({
-    mensaje: mensajeParaIA(opcion),
+    mensaje: mensajeParaIA(intencion),
     documentos,
-    instruccionSistema: instruccionParaOpcion(opcion.numero),
+    instruccionSistema: instruccionParaOpcion(intencion.numero),
   });
 
   log.info(
-    { jid: mensaje.jid, opcion: opcion.numero, contexto: documentos.length },
+    { jid: mensaje.jid, opcion: intencion.numero, contexto: documentos.length },
     'Consulta respondida',
   );
 
-  return formatearRespuesta(respuesta);
+  return {
+    texto: formatearRespuesta(respuesta),
+    // Botones para saltar a otro tema sin volver al menú. En WhatsApp no se
+    // muestran: repetir el menú entero abajo de cada respuesta es ruido.
+    opciones: botonesDeSeguimiento(),
+    opcionesSoloEnBotones: true,
+  };
 }
 
 function manejadorMensaje(plataforma: string) {
-  return async (mensaje: MensajeEntrante): Promise<string | undefined> => {
+  return async (mensaje: MensajeEntrante): Promise<Salida | undefined> => {
     try {
       return await responder(mensaje);
     } catch (error) {
@@ -75,7 +103,7 @@ function manejadorMensaje(plataforma: string) {
 const whatsapp = crearClienteWhatsapp({ onMensaje: manejadorMensaje('whatsapp') });
 
 const telegram: ClienteMensajeria | undefined = env.TELEGRAM_BOT_TOKEN
-  ? crearClienteTelegram({ onMensaje: manejadorMensaje('telegram') })
+  ? crearClienteTelegram({ onMensaje: manejadorMensaje('telegram'), comandos: COMANDOS })
   : undefined;
 
 const scraping = await iniciarScraping();

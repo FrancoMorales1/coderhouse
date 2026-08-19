@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { construirPrompt, extraerFuentes } from './prompt.js';
+import {
+  construirPrompt,
+  construirPromptDeMateria,
+  extraerFuentes,
+  MAX_CARACTERES_POR_DOCUMENTO,
+} from './prompt.js';
 
 import type { ConsultaIA } from './types.js';
 
@@ -41,12 +46,16 @@ describe('construirPrompt', () => {
     const prompt = construirPrompt({
       ...consultaBase,
       documentos: [
-        { titulo: 'Plan', url: 'https://fi.mdp.edu.ar/plan', contenido: 'x'.repeat(9000) },
+        {
+          titulo: 'Plan',
+          url: 'https://fi.mdp.edu.ar/plan',
+          contenido: 'x'.repeat(MAX_CARACTERES_POR_DOCUMENTO + 500),
+        },
       ],
     });
 
-    expect(prompt).not.toContain('x'.repeat(4001));
-    expect(prompt).toContain('x'.repeat(4000));
+    expect(prompt).not.toContain('x'.repeat(MAX_CARACTERES_POR_DOCUMENTO + 1));
+    expect(prompt).toContain('x'.repeat(MAX_CARACTERES_POR_DOCUMENTO));
   });
 });
 
@@ -59,5 +68,29 @@ describe('extraerFuentes', () => {
     ]);
 
     expect(fuentes).toEqual(['https://fi.mdp.edu.ar/x', 'https://fi.mdp.edu.ar/y']);
+  });
+});
+
+describe('construirPromptDeMateria', () => {
+  it('lista el catálogo completo y la consulta del alumno', () => {
+    const prompt = construirPromptDeMateria({
+      consulta: 'seguridad informatica',
+      catalogo: ['gestion de seguridad informatica y seguridad en sistemas', 'algebra 1b'],
+    });
+
+    expect(prompt).toContain('- gestion de seguridad informatica y seguridad en sistemas');
+    expect(prompt).toContain('- algebra 1b');
+    expect(prompt).toContain('seguridad informatica');
+  });
+
+  it('no manda horarios: en este paso solo se elige el nombre', () => {
+    const prompt = construirPromptDeMateria({ consulta: 'algebra', catalogo: ['algebra 1b'] });
+
+    expect(prompt).not.toMatch(/\d{2}:\d{2}/);
+    expect(prompt).not.toContain('aula');
+  });
+
+  it('avisa cuando el catálogo está vacío', () => {
+    expect(construirPromptDeMateria({ consulta: 'algebra', catalogo: [] })).toContain('(vacío)');
   });
 });

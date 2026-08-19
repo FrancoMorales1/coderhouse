@@ -1,41 +1,218 @@
+import type { MensajeEntrante, OpcionMenu, RespuestaSalida } from '@fi/core';
+
 export type NumeroOpcion = 1 | 2 | 3 | 4;
 
-export interface OpcionSeleccionada {
+interface DefinicionOpcion {
   numero: NumeroOpcion;
-  /** Texto libre que el usuario agregó después del número. Puede ser vacío. */
-  consulta: string;
+  /** Lo que se lee en el botón. También es la primera línea del pedido de texto. */
+  etiqueta: string;
+  /** Qué se le pide que escriba al alumno después de elegir la opción. */
+  pedido: string;
+  /** Texto gris dentro de la celda de Telegram. */
+  placeholder: string;
 }
 
-export const TEXTO_MENU = `Soy el asistente de la Facultad de Ingeniería (UNMdP).
+const DEFINICIONES = {
+  1: {
+    numero: 1,
+    etiqueta: '📅 Horarios de cursadas',
+    pedido: '¿De qué materia querés el horario?',
+    placeholder: 'Ej: análisis matemático I',
+  },
+  2: {
+    numero: 2,
+    etiqueta: '🗓️ Calendario académico 2026',
+    pedido: '¿Qué fecha o trámite estás buscando?',
+    placeholder: 'Ej: inscripción a finales',
+  },
+  3: {
+    numero: 3,
+    etiqueta: '📚 Plan de estudios',
+    pedido: '¿De qué carrera o materia?',
+    placeholder: 'Ej: ingeniería en informática',
+  },
+  4: {
+    numero: 4,
+    etiqueta: 'ℹ️ Información de la facultad',
+    pedido: '¿Qué necesitás saber?',
+    placeholder: 'Ej: horarios de la biblioteca',
+  },
+} as const satisfies Record<NumeroOpcion, DefinicionOpcion>;
 
-Elegí una opción:
+export const OPCIONES: readonly DefinicionOpcion[] = Object.values(DEFINICIONES);
 
-1 - Horarios de cursadas
-2 - Calendario académico 2026
-3 - Plan de estudios
-4 - Información de la facultad
+const PREFIJO_OPCION = 'opcion:';
 
-Respondé con el número. Para buscar algo específico, agregalo después. Ejemplo: *1 análisis matemático*`;
+function idDeOpcion(numero: NumeroOpcion): string {
+  return `${PREFIJO_OPCION}${String(numero)}`;
+}
+
+function opcionDesdeId(id: string): NumeroOpcion | null {
+  if (!id.startsWith(PREFIJO_OPCION)) return null;
+  const numero = Number(id.slice(PREFIJO_OPCION.length));
+  return esNumeroDeOpcion(numero) ? numero : null;
+}
+
+function esNumeroDeOpcion(valor: number): valor is NumeroOpcion {
+  return valor === 1 || valor === 2 || valor === 3 || valor === 4;
+}
+
+function botones(): OpcionMenu[] {
+  return OPCIONES.map((o) => ({
+    id: idDeOpcion(o.numero),
+    etiqueta: o.etiqueta,
+    atajo: String(o.numero),
+  }));
+}
+
+// ── Mensajes que manda el bot ────────────────────────────────────────────────
+
+/** El menú: botones en Telegram, lista numerada en WhatsApp. */
+export function menuInicial(nombre?: string | undefined): RespuestaSalida {
+  const saludo = nombre ? `¡Hola, ${nombre}!` : '¡Hola!';
+
+  return {
+    texto:
+      `${saludo} Soy el asistente de la Facultad de Ingeniería (UNMdP).\n\n` +
+      '¿Sobre qué querés consultar?',
+    opciones: botones(),
+  };
+}
 
 /**
- * Detecta si el mensaje es una selección de menú.
- * Acepta "1", "2 informatica", "3 ingeniería química", etc.
- * Cualquier otra cosa devuelve null → mostrar el menú.
+ * El segundo paso: ya eligió tema y ahora puede escribir el detalle.
+ * `pedirTexto` hace que Telegram abra la celda de respuesta enfocada; la
+ * etiqueta va en la primera línea porque es lo que después identifica la opción
+ * cuando llega la respuesta.
  */
-export function parsearOpcion(mensaje: string): OpcionSeleccionada | null {
-  const match = /^([1-4])\b\s*([\s\S]*)$/.exec(mensaje.trim());
-  if (!match) return null;
+export function pedidoDeConsulta(numero: NumeroOpcion): RespuestaSalida {
+  const { etiqueta, pedido, placeholder } = DEFINICIONES[numero];
+
   return {
-    numero: Number(match[1]) as NumeroOpcion,
-    consulta: (match[2] ?? '').trim(),
+    texto:
+      `${etiqueta}\n\n${pedido}\n\n` +
+      'Escribilo acá abajo. Si querés ver todo sin filtrar, mandá un guión: -',
+    pedirTexto: { placeholder },
   };
+}
+
+/** Los botones que acompañan una respuesta, para saltar a otro tema sin escribir. */
+export function botonesDeSeguimiento(): OpcionMenu[] {
+  return botones();
+}
+
+/** Comandos que se publican en el menú azul de Telegram. */
+export const COMANDOS = [
+  { comando: 'start', descripcion: 'Empezar y ver el menú' },
+  { comando: 'menu', descripcion: 'Volver al menú principal' },
+];
+
+// ── Interpretación de lo que llega ───────────────────────────────────────────
+
+const PALABRAS_DE_MENU = new Set([
+  '/start',
+  '/menu',
+  '/ayuda',
+  '/help',
+  'menu',
+  'menú',
+  'volver',
+  'inicio',
+  'ayuda',
+]);
+
+/** Formas de decir "no filtres nada, mostrame todo". */
+const SIN_FILTRO = new Set(['-', '.', '*', 'todo', 'todos', 'todas', 'ver todo', 'nada']);
+
+export function pideMenu(texto: string): boolean {
+  return PALABRAS_DE_MENU.has(texto.trim().toLowerCase());
+}
+
+/** Deja la consulta lista para buscar: vacía significa "sin filtro". */
+export function normalizarConsulta(texto: string): string {
+  const limpio = texto.trim();
+  return SIN_FILTRO.has(limpio.toLowerCase()) ? '' : limpio;
+}
+
+/**
+ * Detecta el protocolo de texto: "1", "2 informatica", "3. ingeniería química".
+ * Sigue vivo porque es la única forma de elegir en WhatsApp, que no tiene botones.
+ */
+export function parsearOpcion(mensaje: string): { numero: NumeroOpcion; consulta: string } | null {
+  const match = /^([1-4])\b[\s.:)-]*([\s\S]*)$/.exec(mensaje.trim());
+  if (!match) return null;
+
+  const numero = Number(match[1]);
+  if (!esNumeroDeOpcion(numero)) return null;
+
+  return { numero, consulta: normalizarConsulta(match[2] ?? '') };
+}
+
+/**
+ * Recupera la opción a partir del mensaje que el alumno está respondiendo.
+ *
+ * Evita guardar estado del lado del bot: el pedido lleva su etiqueta en la
+ * primera línea, así que el propio hilo de Telegram dice de qué tema se trata,
+ * aunque el proceso se haya reiniciado en el medio.
+ */
+export function opcionDesdePedido(textoDelPedido: string): NumeroOpcion | null {
+  const primeraLinea = textoDelPedido.split('\n')[0]?.trim() ?? '';
+  return OPCIONES.find((o) => o.etiqueta === primeraLinea)?.numero ?? null;
+}
+
+export type Intencion =
+  | { tipo: 'menu' }
+  | { tipo: 'pedir'; numero: NumeroOpcion }
+  | { tipo: 'consultar'; numero: NumeroOpcion; consulta: string };
+
+/**
+ * Decide qué quiso hacer el usuario. El orden importa:
+ *
+ * 1. Apretó un botón → se le abre la celda de texto para que dé más contexto.
+ * 2. Pidió el menú explícitamente → siempre gana, es la salida de emergencia.
+ * 3. Respondió a un pedido → el hilo dice el tema y el texto es la consulta.
+ * 4. Escribió "2 algo" → protocolo de texto (WhatsApp y quien prefiera tipear).
+ * 5. Ya había elegido tema hace poco → se sigue conversando sobre eso.
+ * 6. Nada de lo anterior → menú.
+ */
+export function interpretar(
+  mensaje: MensajeEntrante,
+  opcionRecordada: NumeroOpcion | null,
+): Intencion {
+  if (mensaje.opcionElegida) {
+    const numero = opcionDesdeId(mensaje.opcionElegida);
+    if (numero) return { tipo: 'pedir', numero };
+    return { tipo: 'menu' };
+  }
+
+  if (pideMenu(mensaje.texto)) return { tipo: 'menu' };
+
+  if (mensaje.respondeA) {
+    const numero = opcionDesdePedido(mensaje.respondeA);
+    if (numero) {
+      return { tipo: 'consultar', numero, consulta: normalizarConsulta(mensaje.texto) };
+    }
+  }
+
+  const porTexto = parsearOpcion(mensaje.texto);
+  if (porTexto) return { tipo: 'consultar', ...porTexto };
+
+  if (opcionRecordada && mensaje.texto.trim().length > 0) {
+    return {
+      tipo: 'consultar',
+      numero: opcionRecordada,
+      consulta: normalizarConsulta(mensaje.texto),
+    };
+  }
+
+  return { tipo: 'menu' };
 }
 
 /**
  * Convierte la opción + consulta en una pregunta natural para pasarle a la IA.
  * Así Gemini recibe contexto claro sobre qué se está preguntando.
  */
-export function mensajeParaIA(opcion: OpcionSeleccionada): string {
+export function mensajeParaIA(opcion: { numero: NumeroOpcion; consulta: string }): string {
   const { numero, consulta } = opcion;
 
   switch (numero) {

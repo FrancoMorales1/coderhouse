@@ -1,11 +1,44 @@
 import { AiError, createLogger, env } from '@fi/core';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 
-import { construirPrompt, extraerFuentes } from './prompt.js';
+import {
+  construirPrompt,
+  construirPromptDeMateria,
+  extraerFuentes,
+  INSTRUCCION_MATERIA,
+} from './prompt.js';
 
-import type { ConsultaIA, ProveedorIA, RespuestaIA } from './types.js';
+import type { ConsultaDeMateria, ConsultaIA, ProveedorIA, RespuestaIA } from './types.js';
 
 const log = createLogger('ai');
+
+/**
+ * El paso 1 devuelve JSON, no prosa: `responseSchema` le saca al modelo la
+ * posibilidad de contestar "creo que se refiere a…" y ahorra tener que parsear
+ * texto libre.
+ */
+const ESQUEMA_MATERIAS = {
+  type: Type.OBJECT,
+  properties: {
+    materias: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description: 'Nombres del catálogo, copiados tal cual, de más a menos probable.',
+    },
+  },
+  required: ['materias'],
+};
+
+/** Solo se aceptan strings: si el modelo devuelve otra cosa, se descarta. */
+function leerMaterias(json: string): string[] {
+  const datos: unknown = JSON.parse(json);
+  if (typeof datos !== 'object' || datos === null) return [];
+
+  const materias = (datos as { materias?: unknown }).materias;
+  if (!Array.isArray(materias)) return [];
+
+  return materias.filter((m): m is string => typeof m === 'string');
+}
 
 export function crearProveedorGemini(
   opciones: { apiKey?: string; modelo?: string } = {},
@@ -37,6 +70,36 @@ export function crearProveedorGemini(
       } catch (error) {
         if (error instanceof AiError) throw error;
         throw new AiError('Falló la consulta a Gemini', error);
+      }
+    },
+
+    async identificarMaterias(consulta: ConsultaDeMateria): Promise<string[]> {
+      if (consulta.catalogo.length === 0) return [];
+
+      try {
+        const respuesta = await cliente.models.generateContent({
+          model: modelo,
+          contents: construirPromptDeMateria(consulta),
+          config: {
+            systemInstruction: INSTRUCCION_MATERIA,
+            // Elegir de una lista cerrada no tiene por qué variar entre consultas.
+            temperature: 0,
+            responseMimeType: 'application/json',
+            responseSchema: ESQUEMA_MATERIAS,
+            maxOutputTokens: 2_048,
+          },
+        });
+
+        const json = respuesta.text?.trim();
+        if (!json) throw new AiError('Gemini no devolvió ninguna materia');
+
+        const materias = leerMaterias(json);
+        log.debug({ consulta: consulta.consulta, materias }, 'Materias identificadas');
+
+        return materias;
+      } catch (error) {
+        if (error instanceof AiError) throw error;
+        throw new AiError('Falló la identificación de la materia', error);
       }
     },
   };

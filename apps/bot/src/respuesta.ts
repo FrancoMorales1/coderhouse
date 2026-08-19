@@ -1,11 +1,12 @@
 import type { RespuestaIA } from '@fi/ai';
 
-const LIMITE_WHATSAPP = 4_000;
+/** Tope conservador: WhatsApp corta en 4096 y Telegram también. */
+const LIMITE_MENSAJE = 4_000;
 const MAX_FUENTES = 3;
 
 /**
- * Deja la respuesta lista para WhatsApp: recorta al límite del canal
- * y agrega las fuentes al pie, sin repetir las que ya cita el texto.
+ * Deja la respuesta lista para mandar: recorta al límite del canal y agrega las
+ * fuentes al pie, sin repetir las que ya cita el texto.
  */
 export function formatearRespuesta(respuesta: RespuestaIA): string {
   const fuentes = respuesta.fuentes
@@ -13,7 +14,7 @@ export function formatearRespuesta(respuesta: RespuestaIA): string {
     .slice(0, MAX_FUENTES);
 
   const pie = fuentes.length > 0 ? `\n\n_Fuentes:_\n${fuentes.join('\n')}` : '';
-  const espacioTexto = LIMITE_WHATSAPP - pie.length;
+  const espacioTexto = LIMITE_MENSAJE - pie.length;
 
   const texto =
     respuesta.texto.length > espacioTexto
