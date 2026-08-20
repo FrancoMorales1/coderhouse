@@ -6,7 +6,9 @@ import {
   interpretar,
   mensajeParaIA,
   menuInicial,
+  materiaElegida,
   normalizarConsulta,
+  opcionesDeMaterias,
   opcionDesdePedido,
   parsearOpcion,
   pedidoDeConsulta,
@@ -148,6 +150,17 @@ describe('menuInicial', () => {
       'opcion:3',
       'opcion:4',
     ]);
+  });
+});
+
+describe('opcionesDeMaterias', () => {
+  it('publica los nombres exactos y permite elegir por botón o número', () => {
+    const materias = ['gest. de seg. informatica y seg. en sist', 'principios de seg. informatica'];
+    const salida = opcionesDeMaterias(materias);
+
+    expect(salida.opciones?.map((opcion) => opcion.etiqueta)).toEqual(materias);
+    expect(materiaElegida(entrante({ opcionElegida: 'materia:2' }), materias)).toBe(materias[1]);
+    expect(materiaElegida(entrante({ texto: '1' }), materias)).toBe(materias[0]);
   });
 });
 

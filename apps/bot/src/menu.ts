@@ -101,6 +101,31 @@ export function botonesDeSeguimiento(): OpcionMenu[] {
   return botones();
 }
 
+const PREFIJO_MATERIA = 'materia:';
+
+export function opcionesDeMaterias(materias: string[]): RespuestaSalida {
+  return {
+    texto: 'Encontré varias materias posibles. Elegí una para ver sus horarios:',
+    opciones: materias.map((materia, indice) => ({
+      id: `${PREFIJO_MATERIA}${indice + 1}`,
+      etiqueta: materia,
+      atajo: String(indice + 1),
+    })),
+  };
+}
+
+export function materiaElegida(mensaje: MensajeEntrante, materias: string[] | null): string | null {
+  if (!materias || materias.length === 0) return null;
+
+  const indice = mensaje.opcionElegida?.startsWith(PREFIJO_MATERIA)
+    ? Number(mensaje.opcionElegida.slice(PREFIJO_MATERIA.length))
+    : Number(/^(\d+)[.)]?$/.exec(mensaje.texto.trim())?.[1]);
+
+  return Number.isInteger(indice) && indice >= 1 && indice <= materias.length
+    ? (materias[indice - 1] ?? null)
+    : null;
+}
+
 /** Comandos que se publican en el menú azul de Telegram. */
 export const COMANDOS = [
   { comando: 'start', descripcion: 'Empezar y ver el menú' },

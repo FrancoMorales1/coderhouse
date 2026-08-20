@@ -24,6 +24,13 @@ const MAX_MATERIAS_CATALOGO = 1_000;
 const MAX_FRAGMENTOS_MATERIAL = 3;
 const MAX_TITULOS_MATERIAL = 50;
 
+function arregloTexto(valores: string[]) {
+  return sql`ARRAY[${sql.join(
+    valores.map((valor) => sql`${valor}`),
+    sql`, `,
+  )}]::text[]`;
+}
+
 const FUENTE_SALAS = 'https://salas.fi.mdp.edu.ar/';
 const FUENTE_FACULTAD = 'https://www.fi.mdp.edu.ar/';
 
@@ -39,6 +46,11 @@ interface FilaCursada extends Record<string, unknown> {
   tipo: string;
   comision: string | null;
   aula: string;
+}
+
+export interface SeleccionDeMaterias {
+  tipo: 'seleccion-materias';
+  materias: string[];
 }
 
 const ETIQUETA_TIPO: Record<string, string> = {
@@ -111,7 +123,7 @@ async function clasesDeMaterias(
   const { rows } = await db.execute<FilaCursada>(sql`
     SELECT ${COLUMNAS} FROM cursadas
     WHERE fecha >= ${desde} AND fecha <= ${hasta}
-      AND materia = ANY(${materias}::text[])
+      AND materia = ANY(${arregloTexto(materias)})
     ORDER BY fecha, hora_inicio
     LIMIT ${MAX_CLASES_MATERIA}
   `);
@@ -145,7 +157,10 @@ async function catalogoDeMaterias(desde: string, hasta: string): Promise<string[
  * como "esto es todo lo que hay" y termina en un "no tengo esa información"
  * que no ayuda a nadie.
  */
-async function buscarHorarios(consulta: string, ia: ProveedorIA): Promise<FragmentoContexto[]> {
+async function buscarHorarios(
+  consulta: string,
+  ia: ProveedorIA,
+): Promise<FragmentoContexto[] | SeleccionDeMaterias> {
   const hoy = fechaEnZona(new Date());
   const hasta = sumarDias(hoy, DIAS_AGENDA);
 
@@ -180,6 +195,10 @@ async function buscarHorarios(consulta: string, ia: ProveedorIA): Promise<Fragme
   const catalogo = await catalogoDeMaterias(hoy, hasta);
   const propuestas = await ia.identificarMaterias({ consulta, catalogo });
   const elegidas = validarContraCatalogo(propuestas, catalogo);
+
+  if (elegidas.length > 1) {
+    return { tipo: 'seleccion-materias', materias: elegidas };
+  }
 
   // Paso 2: recién ahora se van a buscar las clases.
   const filas =
@@ -253,7 +272,7 @@ async function buscarEnMaterial(
   if (consulta.length === 0) {
     const { rows } = await db.execute<FilaMaterial>(sql`
       SELECT titulo, contenido FROM material
-      WHERE categoria = ANY(${categorias}::text[])
+      WHERE categoria = ANY(${arregloTexto(categorias)})
       LIMIT ${MAX_FRAGMENTOS_MATERIAL}
     `);
     return rows.map(aFragmento);
@@ -261,7 +280,7 @@ async function buscarEnMaterial(
 
   const exactas = await db.execute<FilaMaterial>(sql`
     SELECT titulo, contenido FROM material
-    WHERE categoria = ANY(${categorias}::text[])
+    WHERE categoria = ANY(${arregloTexto(categorias)})
       AND to_tsvector(${FTS}, ${TEXTO_MATERIAL}) @@ plainto_tsquery(${FTS}, ${consulta})
     ORDER BY ts_rank(to_tsvector(${FTS}, ${TEXTO_MATERIAL}), plainto_tsquery(${FTS}, ${consulta})) DESC
     LIMIT ${MAX_FRAGMENTOS_MATERIAL}
@@ -272,7 +291,7 @@ async function buscarEnMaterial(
   if (tsq) {
     const parciales = await db.execute<FilaMaterial>(sql`
       SELECT titulo, contenido FROM material
-      WHERE categoria = ANY(${categorias}::text[])
+      WHERE categoria = ANY(${arregloTexto(categorias)})
         AND to_tsvector(${FTS}, ${TEXTO_MATERIAL}) @@ to_tsquery(${FTS}, ${tsq})
       ORDER BY ts_rank(to_tsvector(${FTS}, ${TEXTO_MATERIAL}), to_tsquery(${FTS}, ${tsq})) DESC
       LIMIT ${MAX_FRAGMENTOS_MATERIAL}
@@ -282,7 +301,7 @@ async function buscarEnMaterial(
 
   const { rows: titulos } = await db.execute<{ titulo: string }>(sql`
     SELECT titulo FROM material
-    WHERE categoria = ANY(${categorias}::text[])
+    WHERE categoria = ANY(${arregloTexto(categorias)})
     ORDER BY titulo
     LIMIT ${MAX_TITULOS_MATERIAL}
   `);
@@ -306,7 +325,7 @@ export async function obtenerContextoDeOpcion(
   opcion: NumeroOpcion,
   consulta: string,
   ia: ProveedorIA,
-): Promise<FragmentoContexto[]> {
+): Promise<FragmentoContexto[] | SeleccionDeMaterias> {
   switch (opcion) {
     case 1:
       return buscarHorarios(consulta, ia);

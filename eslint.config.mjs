@@ -36,6 +36,7 @@ export default defineConfig([
       'import-x/resolver-next': [
         createTypeScriptImportResolver({
           alwaysTryTypes: true,
+          conditionNames: ['development', 'types', 'import', 'default'],
           project: ['packages/*/tsconfig.json', 'apps/*/tsconfig.json'],
           noWarnOnMultipleProjects: true,
         }),

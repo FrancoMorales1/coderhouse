@@ -16,6 +16,7 @@ const VIGENCIA_MS = 15 * 60 * 1000;
  * nada, porque el camino principal (responder al pedido) no depende de esto.
  */
 const ultimaOpcion = new Map<string, { opcion: NumeroOpcion; expira: number }>();
+const materiasPendientes = new Map<string, { materias: string[]; expira: number }>();
 
 function purgar(ahora: number): void {
   for (const [jid, entrada] of ultimaOpcion) {
@@ -43,4 +44,24 @@ export function opcionVigente(jid: string): NumeroOpcion | null {
 
 export function olvidarOpcion(jid: string): void {
   ultimaOpcion.delete(jid);
+}
+
+export function recordarMaterias(jid: string, materias: string[]): void {
+  materiasPendientes.set(jid, { materias, expira: Date.now() + VIGENCIA_MS });
+}
+
+export function materiasVigentes(jid: string): string[] | null {
+  const entrada = materiasPendientes.get(jid);
+  if (!entrada) return null;
+
+  if (entrada.expira <= Date.now()) {
+    materiasPendientes.delete(jid);
+    return null;
+  }
+
+  return entrada.materias;
+}
+
+export function olvidarMaterias(jid: string): void {
+  materiasPendientes.delete(jid);
 }

@@ -15,13 +15,22 @@ import {
   botonesDeSeguimiento,
   COMANDOS,
   interpretar,
+  materiaElegida,
   mensajeParaIA,
   menuInicial,
+  opcionesDeMaterias,
   pedidoDeConsulta,
 } from './menu.js';
 import { formatearRespuesta, MENSAJE_ERROR } from './respuesta.js';
 import { iniciarScraping } from './scraping.js';
-import { olvidarOpcion, opcionVigente, recordarOpcion } from './sesion.js';
+import {
+  olvidarMaterias,
+  olvidarOpcion,
+  materiasVigentes,
+  opcionVigente,
+  recordarMaterias,
+  recordarOpcion,
+} from './sesion.js';
 
 const log = createLogger('bot');
 
@@ -54,9 +63,13 @@ async function responder(mensaje: MensajeEntrante): Promise<Salida> {
     return MENSAJE_RATE_LIMIT;
   }
 
-  const intencion = interpretar(mensaje, opcionVigente(mensaje.jid));
+  const materia = materiaElegida(mensaje, materiasVigentes(mensaje.jid));
+  const intencion = materia
+    ? { tipo: 'consultar' as const, numero: 1 as const, consulta: materia }
+    : interpretar(mensaje, opcionVigente(mensaje.jid));
 
   if (intencion.tipo === 'menu') {
+    olvidarMaterias(mensaje.jid);
     olvidarOpcion(mensaje.jid);
     return menuInicial(mensaje.nombre);
   }
@@ -69,6 +82,11 @@ async function responder(mensaje: MensajeEntrante): Promise<Salida> {
   }
 
   const documentos = await obtenerContextoDeOpcion(intencion.numero, intencion.consulta, ia);
+  if (!Array.isArray(documentos)) {
+    recordarMaterias(mensaje.jid, documentos.materias);
+    return opcionesDeMaterias(documentos.materias);
+  }
+  olvidarMaterias(mensaje.jid);
   const respuesta = await ia.responder({
     mensaje: mensajeParaIA(intencion),
     documentos,
