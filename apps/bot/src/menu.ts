@@ -102,6 +102,52 @@ export function botonesDeSeguimiento(): OpcionMenu[] {
 }
 
 const PREFIJO_MATERIA = 'materia:';
+const PREFIJO_CARRERA = 'carrera:';
+const PREFIJO_PLAN = 'plan:';
+
+function indiceDeOpcion(mensaje: MensajeEntrante, prefijo: string): number {
+  return mensaje.opcionElegida?.startsWith(prefijo)
+    ? Number(mensaje.opcionElegida.slice(prefijo.length))
+    : Number(/^(\d+)[.)]?$/.exec(mensaje.texto.trim())?.[1]);
+}
+
+export function opcionesDeCarreras(carreras: string[]): RespuestaSalida {
+  return {
+    texto: 'Elegí la carrera:',
+    opciones: carreras.map((carrera, indice) => ({
+      id: `${PREFIJO_CARRERA}${indice + 1}`,
+      etiqueta: carrera,
+      atajo: String(indice + 1),
+    })),
+  };
+}
+
+export function carreraElegida(mensaje: MensajeEntrante, carreras: string[] | null): string | null {
+  if (!carreras || carreras.length === 0) return null;
+  const indice = indiceDeOpcion(mensaje, PREFIJO_CARRERA);
+  return Number.isInteger(indice) && indice >= 1 && indice <= carreras.length
+    ? (carreras[indice - 1] ?? null)
+    : null;
+}
+
+export function opcionesDePlanes(planes: string[]): RespuestaSalida {
+  return {
+    texto: 'Elegí el plan de estudios:',
+    opciones: planes.map((plan, indice) => ({
+      id: `${PREFIJO_PLAN}${indice + 1}`,
+      etiqueta: plan,
+      atajo: String(indice + 1),
+    })),
+  };
+}
+
+export function planElegido(mensaje: MensajeEntrante, planes: string[] | null): string | null {
+  if (!planes || planes.length === 0) return null;
+  const indice = indiceDeOpcion(mensaje, PREFIJO_PLAN);
+  return Number.isInteger(indice) && indice >= 1 && indice <= planes.length
+    ? (planes[indice - 1] ?? null)
+    : null;
+}
 
 export function opcionesDeMaterias(materias: string[]): RespuestaSalida {
   return {

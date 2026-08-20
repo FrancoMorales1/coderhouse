@@ -24,6 +24,44 @@ const MAX_MATERIAS_CATALOGO = 1_000;
 const MAX_FRAGMENTOS_MATERIAL = 3;
 const MAX_TITULOS_MATERIAL = 50;
 
+function normalizarTexto(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+}
+
+export async function carrerasDePlanes(): Promise<string[]> {
+  const { rows } = await db.execute<{ carrera: string }>(sql`
+    SELECT DISTINCT regexp_replace(subcategoria, '\\s+\\(Plan\\s+\\d+\\)$', '', 'i') AS carrera
+    FROM material
+    WHERE categoria = 'plan_estudios' AND subcategoria IS NOT NULL
+    ORDER BY carrera
+  `);
+
+  const carreras = new Map<string, string>();
+  for (const fila of rows) {
+    const clave = normalizarTexto(fila.carrera);
+    if (!carreras.has(clave)) carreras.set(clave, fila.carrera);
+  }
+  return [...carreras.values()];
+}
+
+export async function planesDeEstudio(carrera: string): Promise<string[]> {
+  const { rows } = await db.execute<{ plan: string }>(sql`
+    SELECT DISTINCT subcategoria AS plan
+    FROM material
+    WHERE categoria = 'plan_estudios'
+      AND subcategoria IS NOT NULL
+      AND translate(
+        lower(regexp_replace(subcategoria, '\\s+\\(Plan\\s+\\d+\\)$', '', 'i')),
+        'áéíóúüñ', 'aeiouun'
+      ) = translate(lower(${carrera}), 'áéíóúüñ', 'aeiouun')
+    ORDER BY plan
+  `);
+  return rows.map((fila) => fila.plan);
+}
+
 function arregloTexto(valores: string[]) {
   return sql`ARRAY[${sql.join(
     valores.map((valor) => sql`${valor}`),

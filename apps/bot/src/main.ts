@@ -10,25 +10,35 @@ import { cerrarConexion } from '@fi/db';
 import { crearClienteTelegram } from '@fi/telegram';
 import { crearClienteWhatsapp } from '@fi/whatsapp';
 
-import { obtenerContextoDeOpcion } from './contexto.js';
+import { carrerasDePlanes, obtenerContextoDeOpcion, planesDeEstudio } from './contexto.js';
 import {
   botonesDeSeguimiento,
+  carreraElegida,
   COMANDOS,
   interpretar,
   materiaElegida,
   mensajeParaIA,
   menuInicial,
   opcionesDeMaterias,
+  opcionesDeCarreras,
+  opcionesDePlanes,
+  planElegido,
   pedidoDeConsulta,
 } from './menu.js';
 import { formatearRespuesta, MENSAJE_ERROR } from './respuesta.js';
 import { iniciarScraping } from './scraping.js';
 import {
   olvidarMaterias,
+  olvidarCarreras,
+  olvidarPlanes,
   olvidarOpcion,
   materiasVigentes,
+  carrerasVigentes,
+  planesVigentes,
   opcionVigente,
   recordarMaterias,
+  recordarCarreras,
+  recordarPlanes,
   recordarOpcion,
 } from './sesion.js';
 
@@ -64,12 +74,27 @@ async function responder(mensaje: MensajeEntrante): Promise<Salida> {
   }
 
   const materia = materiaElegida(mensaje, materiasVigentes(mensaje.jid));
+  const plan = planElegido(mensaje, planesVigentes(mensaje.jid));
+  const carrera = carreraElegida(mensaje, carrerasVigentes(mensaje.jid));
+
+  if (carrera) {
+    const planes = await planesDeEstudio(carrera);
+    if (planes.length === 0) return { texto: 'No encontré planes para esa carrera.' };
+    olvidarCarreras(mensaje.jid);
+    recordarPlanes(mensaje.jid, planes);
+    return opcionesDePlanes(planes);
+  }
+
   const intencion = materia
     ? { tipo: 'consultar' as const, numero: 1 as const, consulta: materia }
-    : interpretar(mensaje, opcionVigente(mensaje.jid));
+    : plan
+      ? { tipo: 'consultar' as const, numero: 3 as const, consulta: plan }
+      : interpretar(mensaje, opcionVigente(mensaje.jid));
 
   if (intencion.tipo === 'menu') {
     olvidarMaterias(mensaje.jid);
+    olvidarCarreras(mensaje.jid);
+    olvidarPlanes(mensaje.jid);
     olvidarOpcion(mensaje.jid);
     return menuInicial(mensaje.nombre);
   }
@@ -78,6 +103,12 @@ async function responder(mensaje: MensajeEntrante): Promise<Salida> {
 
   // Eligió tema: se le abre la celda para que agregue contexto antes de buscar.
   if (intencion.tipo === 'pedir') {
+    if (intencion.numero === 3) {
+      const carreras = await carrerasDePlanes();
+      if (carreras.length === 0) return { texto: 'No encontré carreras con planes cargados.' };
+      recordarCarreras(mensaje.jid, carreras);
+      return opcionesDeCarreras(carreras);
+    }
     return pedidoDeConsulta(intencion.numero);
   }
 
@@ -87,6 +118,8 @@ async function responder(mensaje: MensajeEntrante): Promise<Salida> {
     return opcionesDeMaterias(documentos.materias);
   }
   olvidarMaterias(mensaje.jid);
+  olvidarCarreras(mensaje.jid);
+  olvidarPlanes(mensaje.jid);
   const respuesta = await ia.responder({
     mensaje: mensajeParaIA(intencion),
     documentos,

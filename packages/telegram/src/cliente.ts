@@ -85,12 +85,16 @@ export function crearClienteTelegram(opciones: OpcionesCliente): ClienteMensajer
   return {
     async conectar(): Promise<void> {
       if (opciones.comandos && opciones.comandos.length > 0) {
-        await bot.api.setMyCommands(
-          opciones.comandos.map(({ comando, descripcion }) => ({
-            command: comando,
-            description: descripcion,
-          })),
-        );
+        try {
+          await bot.api.setMyCommands(
+            opciones.comandos.map(({ comando, descripcion }) => ({
+              command: comando,
+              description: descripcion,
+            })),
+          );
+        } catch (error) {
+          log.warn({ err: error }, 'No se pudieron registrar los comandos de Telegram');
+        }
       }
 
       // bot.start() es un loop de polling que no resuelve hasta que se llama bot.stop().

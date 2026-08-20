@@ -4,13 +4,17 @@ import type { MensajeEntrante } from '@fi/core';
 
 import {
   interpretar,
+  carreraElegida,
   mensajeParaIA,
   menuInicial,
   materiaElegida,
   normalizarConsulta,
   opcionesDeMaterias,
+  opcionesDeCarreras,
+  opcionesDePlanes,
   opcionDesdePedido,
   parsearOpcion,
+  planElegido,
   pedidoDeConsulta,
 } from './menu.js';
 
@@ -161,6 +165,22 @@ describe('opcionesDeMaterias', () => {
     expect(salida.opciones?.map((opcion) => opcion.etiqueta)).toEqual(materias);
     expect(materiaElegida(entrante({ opcionElegida: 'materia:2' }), materias)).toBe(materias[1]);
     expect(materiaElegida(entrante({ texto: '1' }), materias)).toBe(materias[0]);
+  });
+});
+
+describe('selección de planes de estudio', () => {
+  it('muestra una carrera por botón y luego sus planes', () => {
+    const carreras = ['COMPUTACIÓN', 'INFORMÁTICA'];
+    const planes = ['COMPUTACIÓN (Plan 2010)', 'Computacion (Plan 2024)'];
+
+    expect(opcionesDeCarreras(carreras).opciones?.map((opcion) => opcion.id)).toEqual([
+      'carrera:1',
+      'carrera:2',
+    ]);
+    expect(carreraElegida(entrante({ opcionElegida: 'carrera:1' }), carreras)).toBe(carreras[0]);
+
+    expect(opcionesDePlanes(planes).opciones?.map((opcion) => opcion.etiqueta)).toEqual(planes);
+    expect(planElegido(entrante({ opcionElegida: 'plan:2' }), planes)).toBe(planes[1]);
   });
 });
 

@@ -17,6 +17,8 @@ const VIGENCIA_MS = 15 * 60 * 1000;
  */
 const ultimaOpcion = new Map<string, { opcion: NumeroOpcion; expira: number }>();
 const materiasPendientes = new Map<string, { materias: string[]; expira: number }>();
+const carrerasPendientes = new Map<string, { carreras: string[]; expira: number }>();
+const planesPendientes = new Map<string, { planes: string[]; expira: number }>();
 
 function purgar(ahora: number): void {
   for (const [jid, entrada] of ultimaOpcion) {
@@ -64,4 +66,40 @@ export function materiasVigentes(jid: string): string[] | null {
 
 export function olvidarMaterias(jid: string): void {
   materiasPendientes.delete(jid);
+}
+
+export function recordarCarreras(jid: string, carreras: string[]): void {
+  carrerasPendientes.set(jid, { carreras, expira: Date.now() + VIGENCIA_MS });
+}
+
+export function carrerasVigentes(jid: string): string[] | null {
+  const entrada = carrerasPendientes.get(jid);
+  if (!entrada) return null;
+  if (entrada.expira <= Date.now()) {
+    carrerasPendientes.delete(jid);
+    return null;
+  }
+  return entrada.carreras;
+}
+
+export function olvidarCarreras(jid: string): void {
+  carrerasPendientes.delete(jid);
+}
+
+export function recordarPlanes(jid: string, planes: string[]): void {
+  planesPendientes.set(jid, { planes, expira: Date.now() + VIGENCIA_MS });
+}
+
+export function planesVigentes(jid: string): string[] | null {
+  const entrada = planesPendientes.get(jid);
+  if (!entrada) return null;
+  if (entrada.expira <= Date.now()) {
+    planesPendientes.delete(jid);
+    return null;
+  }
+  return entrada.planes;
+}
+
+export function olvidarPlanes(jid: string): void {
+  planesPendientes.delete(jid);
 }
