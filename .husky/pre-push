@@ -1,3 +1,0 @@
-# Última red de contención antes de gastar minutos de CI.
-pnpm build
-pnpm test
