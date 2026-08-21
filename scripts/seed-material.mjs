@@ -81,7 +81,7 @@ try {
 
 const materialDir = resolve(__dirname, '../material');
 const planDir = join(materialDir, 'Plan de estudios');
-const calendarioPath = join(materialDir, 'OCA 638-25 CALENDARIO ACADEMICO 2026.pdf');
+const calendarioPath = join(materialDir, 'CALENDARIO ACADEMICO 2026.pdf');
 const calendarioUrl = 'https://owncloud.fi.mdp.edu.ar/index.php/s/Sq92zl0BUtI0IoQ/download';
 
 const PLANES_REMOTOS = [

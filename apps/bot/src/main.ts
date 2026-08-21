@@ -113,9 +113,7 @@ async function responder(mensaje: MensajeEntrante): Promise<Salida> {
       if (!Array.isArray(documentos)) return MENSAJE_ERROR;
       return {
         texto: 'Acá tenés el calendario académico 2026.',
-        archivos: documentos.flatMap((documento) =>
-          documento.archivo ? [documento.archivo] : [],
-        ),
+        archivos: documentos.flatMap((documento) => (documento.archivo ? [documento.archivo] : [])),
         opciones: botonesDeSeguimiento(),
         opcionesSoloEnBotones: true,
       };
