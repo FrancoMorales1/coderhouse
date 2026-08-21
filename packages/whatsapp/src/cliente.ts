@@ -117,6 +117,17 @@ export function crearClienteWhatsapp(opciones: OpcionesCliente): ClienteWhatsapp
   // aplana a texto y las opciones vuelven a ser una lista numerada.
   async function enviar(jid: string, salida: Salida): Promise<void> {
     if (!socket) throw new WhatsappError('El cliente no está conectado');
+
+    if (typeof salida !== 'string') {
+      for (const archivo of salida.archivos ?? []) {
+        await socket.sendMessage(jid, {
+          document: { url: archivo.ruta },
+          fileName: archivo.nombre,
+          mimetype: 'application/pdf',
+        });
+      }
+    }
+
     await socket.sendMessage(jid, { text: aTextoPlano(salida) });
   }
 

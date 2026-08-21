@@ -300,15 +300,17 @@ const TEXTO_MATERIAL = sql`(titulo || ' ' || contenido)`;
  * que cayera más adelante.
  */
 function aFragmento(fila: FilaMaterial): FragmentoContexto {
+  const esArchivoAdjunto = fila.categoria === 'plan_estudios' || fila.categoria === 'calendario';
+
   return {
     titulo: fila.titulo,
     url: FUENTE_FACULTAD,
     contenido: fila.contenido,
-    ...(fila.categoria === 'plan_estudios' && fila.fuente
+    ...(esArchivoAdjunto && fila.fuente
       ? {
           archivo: {
             ruta: resolve(
-              fileURLToPath(new URL('../../../material/Plan de estudios/', import.meta.url)),
+              fileURLToPath(new URL('../../../material/', import.meta.url)),
               fila.fuente,
             ),
             nombre: fila.fuente,

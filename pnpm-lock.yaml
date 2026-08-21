@@ -45,6 +45,9 @@ catalogs:
     drizzle-orm:
       specifier: ^0.45.2
       version: 0.45.2
+    esbuild:
+      specifier: ^0.28.2
+      version: 0.28.2
     eslint:
       specifier: ^10.8.1
       version: 10.8.1
@@ -119,6 +122,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: 'catalog:'
         version: 4.1.10(vitest@4.1.10)
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/pg@8.21.0)(pg@8.23.0)
       eslint:
         specifier: 'catalog:'
         version: 10.8.1(jiti@2.6.1)
@@ -273,6 +279,9 @@ importers:
       drizzle-kit:
         specifier: 'catalog:'
         version: 0.31.10
+      esbuild:
+        specifier: 'catalog:'
+        version: 0.28.2
       typescript:
         specifier: 'catalog:'
         version: 5.9.3

@@ -81,6 +81,8 @@ try {
 
 const materialDir = resolve(__dirname, '../material');
 const planDir = join(materialDir, 'Plan de estudios');
+const calendarioPath = join(materialDir, 'OCA 638-25 CALENDARIO ACADEMICO 2026.pdf');
+const calendarioUrl = 'https://owncloud.fi.mdp.edu.ar/index.php/s/Sq92zl0BUtI0IoQ/download';
 
 const PLANES_REMOTOS = [
   ['ELÉCTRICA', 2003, 'zabb37vLwgJ89aN', 'JhbcIS4TolbT6I4'],
@@ -106,6 +108,16 @@ async function descargarPlan(carrera, anio, token) {
   mkdirSync(planDir, { recursive: true });
   writeFileSync(ruta, Buffer.from(await respuesta.arrayBuffer()));
   return { archivo, ruta };
+}
+
+async function descargarCalendario() {
+  const respuesta = await fetch(calendarioUrl);
+  if (!respuesta.ok) {
+    throw new Error(`No se pudo descargar el calendario académico: HTTP ${respuesta.status}`);
+  }
+
+  writeFileSync(calendarioPath, Buffer.from(await respuesta.arrayBuffer()));
+  return calendarioPath;
 }
 
 /** Lee un PDF y devuelve su texto plano. */
@@ -192,7 +204,7 @@ console.log('   → 1 sección');
 
 // --- Calendario académico PDF ---
 console.log('📄 Leyendo calendario académico...');
-const calPath = join(materialDir, 'OCA 638-25 CALENDARIO ACADEMICO 2026.pdf');
+const calPath = await descargarCalendario();
 filas.push({
   categoria: 'calendario',
   subcategoria: '2026',

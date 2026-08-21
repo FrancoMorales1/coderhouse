@@ -28,6 +28,7 @@ catalog:
   '@types/qrcode-terminal': ^0.12.2
   '@vitest/coverage-v8': ^4.1.10
   drizzle-kit: ^0.31.10
+  esbuild: ^0.28.2
   eslint: ^10.8.1
   eslint-config-prettier: ^10.1.8
   eslint-import-resolver-typescript: ^4.4.5

@@ -108,6 +108,19 @@ async function responder(mensaje: MensajeEntrante): Promise<Salida> {
 
   // Eligió tema: se le abre la celda para que agregue contexto antes de buscar.
   if (intencion.tipo === 'pedir') {
+    if (intencion.numero === 2) {
+      const documentos = await obtenerContextoDeOpcion(2, '', ia);
+      if (!Array.isArray(documentos)) return MENSAJE_ERROR;
+      return {
+        texto: 'Acá tenés el calendario académico 2026.',
+        archivos: documentos.flatMap((documento) =>
+          documento.archivo ? [documento.archivo] : [],
+        ),
+        opciones: botonesDeSeguimiento(),
+        opcionesSoloEnBotones: true,
+      };
+    }
+
     if (intencion.numero === 3) {
       const carreras = await carrerasDePlanes();
       if (carreras.length === 0) return { texto: 'No encontré carreras con planes cargados.' };
@@ -128,7 +141,7 @@ async function responder(mensaje: MensajeEntrante): Promise<Salida> {
   olvidarCarreras(mensaje.jid);
   olvidarPlanes(mensaje.jid);
 
-  if (intencion.numero === 3) {
+  if (intencion.numero === 2 || intencion.numero === 3) {
     return {
       texto: '¿Sobre qué querés consultar ahora?',
       archivos: documentos.flatMap((documento) => (documento.archivo ? [documento.archivo] : [])),
