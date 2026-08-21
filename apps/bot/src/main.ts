@@ -10,7 +10,12 @@ import { cerrarConexion } from '@fi/db';
 import { crearClienteTelegram } from '@fi/telegram';
 import { crearClienteWhatsapp } from '@fi/whatsapp';
 
-import { carrerasDePlanes, obtenerContextoDeOpcion, planesDeEstudio } from './contexto.js';
+import {
+  carrerasDePlanes,
+  obtenerContextoDeOpcion,
+  obtenerPlanDeEstudio,
+  planesDeEstudio,
+} from './contexto.js';
 import {
   botonesDeSeguimiento,
   carreraElegida,
@@ -112,7 +117,9 @@ async function responder(mensaje: MensajeEntrante): Promise<Salida> {
     return pedidoDeConsulta(intencion.numero);
   }
 
-  const documentos = await obtenerContextoDeOpcion(intencion.numero, intencion.consulta, ia);
+  const documentos = plan
+    ? await obtenerPlanDeEstudio(plan)
+    : await obtenerContextoDeOpcion(intencion.numero, intencion.consulta, ia);
   if (!Array.isArray(documentos)) {
     recordarMaterias(mensaje.jid, documentos.materias);
     return opcionesDeMaterias(documentos.materias);
@@ -120,6 +127,15 @@ async function responder(mensaje: MensajeEntrante): Promise<Salida> {
   olvidarMaterias(mensaje.jid);
   olvidarCarreras(mensaje.jid);
   olvidarPlanes(mensaje.jid);
+
+  if (intencion.numero === 3) {
+    return {
+      texto: '¿Sobre qué querés consultar ahora?',
+      archivos: documentos.flatMap((documento) => (documento.archivo ? [documento.archivo] : [])),
+      opciones: botonesDeSeguimiento(),
+    };
+  }
+
   const respuesta = await ia.responder({
     mensaje: mensajeParaIA(intencion),
     documentos,
@@ -142,6 +158,16 @@ async function responder(mensaje: MensajeEntrante): Promise<Salida> {
 
 function manejadorMensaje(plataforma: string) {
   return async (mensaje: MensajeEntrante): Promise<Salida | undefined> => {
+    log.info(
+      {
+        jid: mensaje.jid,
+        plataforma,
+        texto: mensaje.texto,
+        opcionElegida: mensaje.opcionElegida,
+      },
+      'Solicitud recibida',
+    );
+
     try {
       return await responder(mensaje);
     } catch (error) {

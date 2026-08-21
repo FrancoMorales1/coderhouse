@@ -1,5 +1,5 @@
 import { createLogger, env, TelegramError } from '@fi/core';
-import { Bot } from 'grammy';
+import { Bot, InputFile } from 'grammy';
 
 import type { ClienteMensajeria, ManejadorMensaje, MensajeEntrante, Salida } from '@fi/core';
 
@@ -32,11 +32,25 @@ export function crearClienteTelegram(opciones: OpcionesCliente): ClienteMensajer
   const responderGrupos = opciones.responderGrupos ?? false;
   const bot = new Bot(token);
 
+  bot.catch = (error) => {
+    log.error({ err: error }, 'Error no controlado en Telegram');
+  };
+
   async function enviarMensaje(jid: string, salida: Salida): Promise<void> {
     const texto = typeof salida === 'string' ? salida : salida.texto;
     const marcado = typeof salida === 'string' ? undefined : marcadoDeRespuesta(salida);
 
-    await bot.api.sendMessage(Number(jid), texto, marcado ? { reply_markup: marcado } : {});
+    if (typeof salida !== 'string') {
+      for (const archivo of salida.archivos ?? []) {
+        await bot.api.sendDocument(Number(jid), new InputFile(archivo.ruta), {
+          caption: archivo.nombre,
+        });
+      }
+    }
+
+    if (texto.trim()) {
+      await bot.api.sendMessage(Number(jid), texto, marcado ? { reply_markup: marcado } : {});
+    }
   }
 
   async function procesar(mensaje: MensajeEntrante): Promise<void> {
@@ -69,8 +83,12 @@ export function crearClienteTelegram(opciones: OpcionesCliente): ClienteMensajer
     const enGrupo = ctx.chat !== undefined && ctx.chat.type !== 'private';
     if (enGrupo && !responderGrupos) return;
 
-    // Sin esto Telegram deja el botón girando unos segundos.
-    await ctx.answerCallbackQuery();
+    // Telegram rechaza callbacks vencidos; no deben detener el polling.
+    try {
+      await ctx.answerCallbackQuery();
+    } catch (error) {
+      log.warn({ err: error }, 'No se pudo confirmar un botón antiguo de Telegram');
+    }
 
     await procesar({
       jid: String(chat.id),

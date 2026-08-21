@@ -18,6 +18,21 @@ services:
       timeout: 5s
       retries: 5
 
+  material-seed:
+    image: node:24-bookworm-slim
+    working_dir: /workspace
+    environment:
+      DATABASE_URL: postgres://fi:fi@postgres:5432/fi_bot
+      CI: 'true'
+    volumes:
+      - .:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >-
+      sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm db:migrate &&
+      pnpm db:seed-material"
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped

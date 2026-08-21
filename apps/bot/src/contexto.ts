@@ -1,3 +1,6 @@
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { db, FTS, tsqueryOr } from '@fi/db';
 import { fechaEnZona, nombreDiaSemana, sumarDias } from '@fi/scrapper';
 import { sql } from 'drizzle-orm';
@@ -282,6 +285,8 @@ async function buscarHorarios(
 interface FilaMaterial extends Record<string, unknown> {
   titulo: string;
   contenido: string;
+  categoria: string;
+  fuente: string | null;
 }
 
 const TEXTO_MATERIAL = sql`(titulo || ' ' || contenido)`;
@@ -295,7 +300,22 @@ const TEXTO_MATERIAL = sql`(titulo || ' ' || contenido)`;
  * que cayera más adelante.
  */
 function aFragmento(fila: FilaMaterial): FragmentoContexto {
-  return { titulo: fila.titulo, url: FUENTE_FACULTAD, contenido: fila.contenido };
+  return {
+    titulo: fila.titulo,
+    url: FUENTE_FACULTAD,
+    contenido: fila.contenido,
+    ...(fila.categoria === 'plan_estudios' && fila.fuente
+      ? {
+          archivo: {
+            ruta: resolve(
+              fileURLToPath(new URL('../../../material/Plan de estudios/', import.meta.url)),
+              fila.fuente,
+            ),
+            nombre: fila.fuente,
+          },
+        }
+      : {}),
+  };
 }
 
 /**
@@ -309,7 +329,7 @@ async function buscarEnMaterial(
 ): Promise<FragmentoContexto[]> {
   if (consulta.length === 0) {
     const { rows } = await db.execute<FilaMaterial>(sql`
-      SELECT titulo, contenido FROM material
+      SELECT categoria, titulo, contenido, fuente FROM material
       WHERE categoria = ANY(${arregloTexto(categorias)})
       LIMIT ${MAX_FRAGMENTOS_MATERIAL}
     `);
@@ -317,7 +337,7 @@ async function buscarEnMaterial(
   }
 
   const exactas = await db.execute<FilaMaterial>(sql`
-    SELECT titulo, contenido FROM material
+    SELECT categoria, titulo, contenido, fuente FROM material
     WHERE categoria = ANY(${arregloTexto(categorias)})
       AND to_tsvector(${FTS}, ${TEXTO_MATERIAL}) @@ plainto_tsquery(${FTS}, ${consulta})
     ORDER BY ts_rank(to_tsvector(${FTS}, ${TEXTO_MATERIAL}), plainto_tsquery(${FTS}, ${consulta})) DESC
@@ -328,7 +348,7 @@ async function buscarEnMaterial(
   const tsq = tsqueryOr(consulta);
   if (tsq) {
     const parciales = await db.execute<FilaMaterial>(sql`
-      SELECT titulo, contenido FROM material
+      SELECT categoria, titulo, contenido, fuente FROM material
       WHERE categoria = ANY(${arregloTexto(categorias)})
         AND to_tsvector(${FTS}, ${TEXTO_MATERIAL}) @@ to_tsquery(${FTS}, ${tsq})
       ORDER BY ts_rank(to_tsvector(${FTS}, ${TEXTO_MATERIAL}), to_tsquery(${FTS}, ${tsq})) DESC
@@ -355,6 +375,15 @@ async function buscarEnMaterial(
         titulos.map((fila) => `- ${fila.titulo}`).join('\n'),
     },
   ];
+}
+
+export async function obtenerPlanDeEstudio(plan: string): Promise<FragmentoContexto[]> {
+  const { rows } = await db.execute<FilaMaterial>(sql`
+    SELECT categoria, titulo, contenido, fuente FROM material
+    WHERE categoria = 'plan_estudios' AND subcategoria = ${plan}
+    LIMIT 1
+  `);
+  return rows.map(aFragmento);
 }
 
 // ── Router por opción de menú ─────────────────────────────────────────────────

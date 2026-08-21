@@ -33,6 +33,11 @@ export interface PedidoDeTexto {
   placeholder: string;
 }
 
+export interface ArchivoSalida {
+  ruta: string;
+  nombre: string;
+}
+
 /**
  * Respuesta del bot. Describe la *intención* de la interfaz; cada canal decide
  * cómo la dibuja: Telegram con botones y celdas, WhatsApp aplanado a texto.
@@ -41,6 +46,7 @@ export interface RespuestaSalida {
   texto: string;
   opciones?: OpcionMenu[] | undefined;
   pedirTexto?: PedidoDeTexto | undefined;
+  archivos?: ArchivoSalida[] | undefined;
   /**
    * Cuando es true las opciones son solo un atajo visual (por ejemplo, los
    * botones que acompañan una respuesta ya dada) y los canales de texto plano

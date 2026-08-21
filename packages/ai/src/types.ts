@@ -3,6 +3,7 @@ export interface FragmentoContexto {
   titulo: string;
   url: string;
   contenido: string;
+  archivo?: { ruta: string; nombre: string };
 }
 
 /** Todo lo que la IA necesita para responder: la consulta natural + contexto de la BBDD. */

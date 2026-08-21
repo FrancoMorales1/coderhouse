@@ -14,7 +14,7 @@
  * manualmente (fuente IS NULL).
  */
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -58,7 +58,20 @@ if (!process.env.DATABASE_URL) {
 let parsePdf;
 try {
   const mod = await import('pdf-parse');
-  parsePdf = mod.default;
+  if (typeof mod.default === 'function') {
+    parsePdf = mod.default;
+  } else if (mod.PDFParse) {
+    parsePdf = async (datos) => {
+      const parser = new mod.PDFParse({ data: datos });
+      try {
+        return await parser.getText();
+      } finally {
+        await parser.destroy();
+      }
+    };
+  }
+
+  if (!parsePdf) throw new Error('API de pdf-parse no reconocida');
 } catch {
   console.error('❌ pdf-parse no está instalado. Corré: pnpm add -D pdf-parse');
   process.exit(1);
@@ -67,6 +80,33 @@ try {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const materialDir = resolve(__dirname, '../material');
+const planDir = join(materialDir, 'Plan de estudios');
+
+const PLANES_REMOTOS = [
+  ['ELÉCTRICA', 2003, 'zabb37vLwgJ89aN', 'JhbcIS4TolbT6I4'],
+  ['ELECTROMECÁNICA', 2003, 'nrqBhqftudFA6oB', '6a1dpoXpgynjUJ5'],
+  ['ELECTRÓNICA', 2003, 'AKbUzlWC1Qc5kTd', 'aIiSGA698CG2kWS'],
+  ['ALIMENTOS', 2003, 'ZfsFfD1NCAlwGJF', 'LuM4QyXII4JvQeO'],
+  ['MATERIALES', 2003, 'yVl2OoorvW9z2b0', 'xE1SIBlA8DqrehB'],
+  ['INFORMATICA', 2010, 'U8NrFE7JuW1n9NM', 'KVytzKvEo3kNMxB'],
+  ['COMPUTACIÓN', 2010, 'CtlYFYcqC74SYPy', 'Rt0MOBv7HIy6w9K'],
+  ['QUÍMICA', 2003, '6mXc6PybYufM1NG', 'jPUWmYJlBPkDHO4'],
+  ['MECÁNICA', 2003, 'w61tcaBSm3jtrFa', 'f4Y5j2cLvJkGyYt'],
+  ['INDUSTRIAL', 2003, 'kbxNPK3vBcSt7mx', 'nR3AejOgxDrj2bZ'],
+];
+
+async function descargarPlan(carrera, anio, token) {
+  const respuesta = await fetch(`https://owncloud.fi.mdp.edu.ar/index.php/s/${token}/download`);
+  if (!respuesta.ok) {
+    throw new Error(`No se pudo descargar ${carrera} ${anio}: HTTP ${respuesta.status}`);
+  }
+
+  const archivo = `PLAN ${String(anio)} - ${carrera}.pdf`;
+  const ruta = join(planDir, archivo);
+  mkdirSync(planDir, { recursive: true });
+  writeFileSync(ruta, Buffer.from(await respuesta.arrayBuffer()));
+  return { archivo, ruta };
+}
 
 /** Lee un PDF y devuelve su texto plano. */
 async function leerPdf(ruta) {
@@ -164,23 +204,24 @@ console.log('   → 1 documento');
 
 // --- Planes de estudio PDFs ---
 console.log('📄 Leyendo planes de estudio...');
-const planDir = join(materialDir, 'Plan de estudios');
-const planFiles = readdirSync(planDir)
-  .filter((f) => f.endsWith('.pdf'))
-  .sort();
-
 let planesLeidos = 0;
-for (const archivo of planFiles) {
-  const carrera = nombreCarrera(archivo);
-  filas.push({
-    categoria: 'plan_estudios',
-    subcategoria: carrera,
-    titulo: `Plan de estudios: ${carrera}`,
-    contenido: await leerPdf(join(planDir, archivo)),
-    fuente: archivo,
-  });
-  console.log(`   ✓ ${carrera}`);
-  planesLeidos++;
+for (const [carrera, anioViejo, tokenViejo, tokenNuevo] of PLANES_REMOTOS) {
+  for (const [anio, token] of [
+    [anioViejo, tokenViejo],
+    [2024, tokenNuevo],
+  ]) {
+    const { archivo, ruta } = await descargarPlan(carrera, anio, token);
+    const nombre = nombreCarrera(archivo);
+    filas.push({
+      categoria: 'plan_estudios',
+      subcategoria: nombre,
+      titulo: `Plan de estudios: ${nombre}`,
+      contenido: await leerPdf(ruta),
+      fuente: archivo,
+    });
+    console.log(`   ✓ ${nombre}`);
+    planesLeidos++;
+  }
 }
 console.log(`   → ${planesLeidos} planes`);
 
