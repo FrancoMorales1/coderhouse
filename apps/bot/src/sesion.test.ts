@@ -5,13 +5,16 @@ import {
   olvidarCarreras,
   olvidarMaterias,
   olvidarOpcion,
+  olvidarPlanActivo,
   olvidarPlanes,
   materiasVigentes,
   opcionVigente,
+  planActivoVigente,
   planesVigentes,
   recordarCarreras,
   recordarMaterias,
   recordarOpcion,
+  recordarPlanActivo,
   recordarPlanes,
 } from './sesion.js';
 
@@ -26,6 +29,7 @@ describe('sesion', () => {
     olvidarMaterias('chat');
     olvidarOpcion('chat');
     olvidarPlanes('chat');
+    olvidarPlanActivo('chat');
   });
 
   it('recuerda el último tema elegido', () => {
@@ -84,5 +88,34 @@ describe('sesion', () => {
     expect(materiasVigentes('chat')).toBeNull();
     expect(carrerasVigentes('chat')).toBeNull();
     expect(planesVigentes('chat')).toBeNull();
+  });
+
+  it('recuerda y olvida el plan activo', () => {
+    recordarPlanActivo('chat', 'Ingeniería en Informática (Plan 2024)');
+    expect(planActivoVigente('chat')).toBe('Ingeniería en Informática (Plan 2024)');
+
+    olvidarPlanActivo('chat');
+    expect(planActivoVigente('chat')).toBeNull();
+  });
+
+  it('no sabe nada del plan activo de un chat que no eligió ninguno', () => {
+    expect(planActivoVigente('otro')).toBeNull();
+  });
+
+  it('aísla el plan activo entre chats distintos', () => {
+    recordarPlanActivo('chat', 'Ingeniería Química (Plan 2003)');
+    recordarPlanActivo('otro-chat', 'Ingeniería Mecánica (Plan 2024)');
+
+    expect(planActivoVigente('chat')).toBe('Ingeniería Química (Plan 2003)');
+    expect(planActivoVigente('otro-chat')).toBe('Ingeniería Mecánica (Plan 2024)');
+
+    olvidarPlanActivo('otro-chat');
+  });
+
+  it('olvida el plan activo después de la ventana de vigencia', () => {
+    recordarPlanActivo('chat', 'Ingeniería Eléctrica (Plan 2024)');
+    vi.advanceTimersByTime(16 * 60 * 1000);
+
+    expect(planActivoVigente('chat')).toBeNull();
   });
 });

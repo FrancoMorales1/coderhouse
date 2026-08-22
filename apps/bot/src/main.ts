@@ -12,6 +12,7 @@ import { crearClienteWhatsapp } from '@fi/whatsapp';
 
 import {
   carrerasDePlanes,
+  obtenerContenidoCalendario,
   obtenerContextoDeOpcion,
   obtenerPlanDeEstudio,
   planesDeEstudio,
@@ -36,14 +37,17 @@ import {
   olvidarMaterias,
   olvidarCarreras,
   olvidarPlanes,
+  olvidarPlanActivo,
   olvidarOpcion,
   materiasVigentes,
   carrerasVigentes,
   planesVigentes,
+  planActivoVigente,
   opcionVigente,
   recordarMaterias,
   recordarCarreras,
   recordarPlanes,
+  recordarPlanActivo,
   recordarOpcion,
 } from './sesion.js';
 
@@ -86,20 +90,35 @@ async function responder(mensaje: MensajeEntrante): Promise<Salida> {
     const planes = await planesDeEstudio(carrera);
     if (planes.length === 0) return { texto: 'No encontré planes para esa carrera.' };
     olvidarCarreras(mensaje.jid);
+    olvidarPlanActivo(mensaje.jid);
     recordarPlanes(mensaje.jid, planes);
     return opcionesDePlanes(planes);
   }
 
+  // Eligió versión del plan: ahora sí se sabe qué archivo es, se lo manda y se
+  // le pide una pregunta real. `plan` queda en sesión como "plan activo" para
+  // que esa pregunta (y las que sigan) no pierdan de vista cuál era.
+  if (plan) {
+    olvidarPlanes(mensaje.jid);
+    recordarPlanActivo(mensaje.jid, plan);
+    recordarOpcion(mensaje.jid, 3);
+    const documentos = await obtenerPlanDeEstudio(plan);
+    return {
+      texto: `Plan de estudios: ${plan}.\n\n¿Sobre qué querés consultar? (créditos, correlativas, materias…)`,
+      archivos: documentos.flatMap((documento) => (documento.archivo ? [documento.archivo] : [])),
+      pedirTexto: { placeholder: 'Ej: cuántos créditos vale una materia' },
+    };
+  }
+
   const intencion = materia
     ? { tipo: 'consultar' as const, numero: 1 as const, consulta: materia }
-    : plan
-      ? { tipo: 'consultar' as const, numero: 3 as const, consulta: plan }
-      : interpretar(mensaje, opcionVigente(mensaje.jid));
+    : interpretar(mensaje, opcionVigente(mensaje.jid));
 
   if (intencion.tipo === 'menu') {
     olvidarMaterias(mensaje.jid);
     olvidarCarreras(mensaje.jid);
     olvidarPlanes(mensaje.jid);
+    olvidarPlanActivo(mensaje.jid);
     olvidarOpcion(mensaje.jid);
     return menuInicial(mensaje.nombre);
   }
@@ -109,13 +128,13 @@ async function responder(mensaje: MensajeEntrante): Promise<Salida> {
   // Eligió tema: se le abre la celda para que agregue contexto antes de buscar.
   if (intencion.tipo === 'pedir') {
     if (intencion.numero === 2) {
-      const documentos = await obtenerContextoDeOpcion(2, '', ia);
-      if (!Array.isArray(documentos)) return MENSAJE_ERROR;
+      const documento = await obtenerContenidoCalendario();
       return {
-        texto: 'Acá tenés el calendario académico 2026.',
-        archivos: documentos.flatMap((documento) => (documento.archivo ? [documento.archivo] : [])),
-        opciones: botonesDeSeguimiento(),
-        opcionesSoloEnBotones: true,
+        texto:
+          '🗓️ Calendario académico 2026\n\n¿Qué fecha o trámite estás buscando? Si querés ' +
+          'ver todo, mandá un guión: -',
+        archivos: documento.archivo ? [documento.archivo] : [],
+        pedirTexto: { placeholder: 'Ej: inscripción a finales' },
       };
     }
 
@@ -128,9 +147,37 @@ async function responder(mensaje: MensajeEntrante): Promise<Salida> {
     return pedidoDeConsulta(intencion.numero);
   }
 
-  const documentos = plan
-    ? await obtenerPlanDeEstudio(plan)
-    : await obtenerContextoDeOpcion(intencion.numero, intencion.consulta, ia);
+  // Pregunta en texto libre sobre plan de estudios: se responde con el plan
+  // activo de la sesión, no con una búsqueda genérica. Si no hay uno vigente
+  // (venció el TTL, o alguien tipeó "3 informática" directo sin pasar por los
+  // botones), se vuelve a mostrar el selector de carreras.
+  if (intencion.numero === 3) {
+    const activo = planActivoVigente(mensaje.jid);
+    if (!activo) {
+      const carreras = await carrerasDePlanes();
+      if (carreras.length === 0) return { texto: 'No encontré carreras con planes cargados.' };
+      recordarCarreras(mensaje.jid, carreras);
+      return opcionesDeCarreras(carreras);
+    }
+
+    recordarPlanActivo(mensaje.jid, activo); // renueva el TTL mientras siga preguntando
+    const documentos = await obtenerPlanDeEstudio(activo);
+    const respuesta = await ia.responder({
+      mensaje: mensajeParaIA(intencion),
+      documentos,
+      instruccionSistema: instruccionParaOpcion(3),
+    });
+
+    log.info({ jid: mensaje.jid, opcion: 3, plan: activo }, 'Consulta respondida');
+
+    return {
+      texto: formatearRespuesta(respuesta),
+      opciones: botonesDeSeguimiento(),
+      opcionesSoloEnBotones: true,
+    };
+  }
+
+  const documentos = await obtenerContextoDeOpcion(intencion.numero, intencion.consulta, ia);
   if (!Array.isArray(documentos)) {
     recordarMaterias(mensaje.jid, documentos.materias);
     return opcionesDeMaterias(documentos.materias);
@@ -138,14 +185,7 @@ async function responder(mensaje: MensajeEntrante): Promise<Salida> {
   olvidarMaterias(mensaje.jid);
   olvidarCarreras(mensaje.jid);
   olvidarPlanes(mensaje.jid);
-
-  if (intencion.numero === 2 || intencion.numero === 3) {
-    return {
-      texto: '¿Sobre qué querés consultar ahora?',
-      archivos: documentos.flatMap((documento) => (documento.archivo ? [documento.archivo] : [])),
-      opciones: botonesDeSeguimiento(),
-    };
-  }
+  olvidarPlanActivo(mensaje.jid);
 
   const respuesta = await ia.responder({
     mensaje: mensajeParaIA(intencion),

@@ -6,14 +6,17 @@ qué hora y en qué aula se dicta cada materia.
 
 Los horarios salen del sistema de reserva de salas de la Facultad
 ([salas.fi.mdp.edu.ar](https://salas.fi.mdp.edu.ar/)), que corre MRBS. Un job
-diario a las 4am trae los próximos 7 días y los deja en Postgres. Al calendario
-académico, los planes de estudio y la información de la facultad los carga
-`scripts/seed-material.mjs` desde `material/`. Cuando un alumno pregunta, el bot
-busca en esa base, arma el contexto y se lo pasa a Gemini.
+diario a las 4am trae los próximos 7 días y los deja en Postgres. El calendario
+académico y la información de la facultad se leen directo de `material/` en
+cada consulta (con cache en memoria, no hay round-trip a la base). Los planes
+de estudio salen de `planes_estudio` en Postgres, que solo guarda qué PDF le
+corresponde a cada carrera y versión — el texto se lee del archivo al momento
+de responder, no se guarda extraído. Cuando un alumno pregunta, el bot arma el
+contexto y se lo pasa a Gemini.
 
 ```
-WhatsApp ─┐                ┌──▶ contexto (horarios y material en Postgres)
-          ├──▶ @fi/bot ────┤
+WhatsApp ─┐                ┌──▶ contexto (horarios y planes_estudio en Postgres,
+          ├──▶ @fi/bot ────┤     calendario e info de facultad desde material/)
 Telegram ─┘                └──▶ @fi/ai ──▶ Gemini ──▶ respuesta ──▶ canal
 
 @fi/queue (cron 4am) ──▶ @fi/scrapper ──▶ MRBS ──▶ Postgres
@@ -165,22 +168,28 @@ materia tal cual no dependa de que la IA acierte. Y si tampoco eso encuentra,
 el fragmento sale marcado `SIN COINCIDENCIAS` con el catálogo entero, así la
 respuesta final puede sugerir lo más parecido en vez de cortar la conversación.
 
-### Material: cascada de texto
+### Calendario, planes de estudio e información de la facultad: archivo directo
 
-El calendario, los planes y la info de la facultad siguen por búsqueda de texto:
-todas las palabras (`plainto_tsquery`), después alguna palabra (`to_tsquery` con
-OR, ordenado por `ts_rank`), y si no hay nada, `SIN COINCIDENCIAS` con los
-títulos disponibles.
+Estas tres opciones no pasan por búsqueda: se le manda al modelo el archivo
+entero como contexto.
 
-Todo corre sobre `espanol_sin_acentos` (`spanish` + `unaccent`). El diccionario
-`spanish` pelado stemea pero no normaliza acentos, y MRBS guarda los títulos
-como los tipeó cada docente: en la misma grilla conviven "Introducción a la
-Matemática Discreta" y "introduccion al modelado computacional". Sin `unaccent`,
-la mitad de las búsquedas no matcheaba nunca.
+- **Calendario** (`material/CALENDARIO ACADEMICO 2026.pdf`) e **información de
+  la facultad** (`material/Información de la facultad.txt`) son fijos, así que
+  se leen (y el PDF se parsea) una sola vez por proceso y quedan en memoria
+  para las próximas consultas.
+- **Plan de estudios**: el alumno elige carrera y versión por botones: esos dos
+  pasos resuelven, vía la tabla `planes_estudio`, qué PDF puntual le
+  corresponde. Ese plan queda como "activo" en la sesión (15 minutos), así que
+  las preguntas de seguimiento ("¿y cuántos créditos tiene esa materia?") se
+  siguen respondiendo con el mismo archivo sin tener que volver a elegir
+  carrera y versión.
 
-En todos los casos el fragmento **le dice al modelo qué encontró la búsqueda**,
-porque un contexto sin etiqueta se lee como "esto es todo lo que hay" y termina
-en un "no tengo esa información" que no ayuda a nadie.
+`espanol_sin_acentos` (`spanish` + `unaccent`) sigue existiendo, pero ahora solo
+lo usan los horarios: el diccionario `spanish` pelado stemea pero no normaliza
+acentos, y MRBS guarda los títulos como los tipeó cada docente — en la misma
+grilla conviven "Introducción a la Matemática Discreta" y "introduccion al
+modelado computacional". Sin `unaccent`, la mitad de las búsquedas no
+matcheaba nunca.
 
 ## Interfaz
 
@@ -230,15 +239,17 @@ Funcionalidades planificadas para versiones futuras:
 
 ### Fuentes activas
 
-| Fuente                       | Contenido                                                                             | Actualización                                                   |
-| ---------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| MRBS (`salas.fi.mdp.edu.ar`) | Horarios de cursadas: aula, horario, materia, tipo                                    | Cron diario a las 4 am                                          |
-| `material/`                  | Calendario académico, planes de estudio, enlaces, infraestructura, grupos de WhatsApp | Script [`scripts/seed-material.mjs`](scripts/seed-material.mjs) |
+| Fuente                                    | Contenido                                          | Actualización                                                                                                                    |
+| ----------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| MRBS (`salas.fi.mdp.edu.ar`)              | Horarios de cursadas: aula, horario, materia, tipo | Cron diario a las 4 am                                                                                                           |
+| `material/CALENDARIO ACADEMICO 2026.pdf`  | Calendario académico                               | Manual: reemplazar el archivo                                                                                                    |
+| `material/Información de la facultad.txt` | Enlaces, infraestructura, grupos de WhatsApp       | Manual: editar el archivo                                                                                                        |
+| `material/Plan de estudios/*.pdf`         | Planes de estudio por carrera y versión            | Manual: reemplazar el PDF + [`pnpm db:seed-planes`](scripts/seed-planes-estudio.mjs) si cambia carrera/versión/nombre de archivo |
 
-### Material pendiente para la BBDD
+### Material pendiente para agregar
 
-El archivo [`scripts/seed-material.mjs`](scripts/seed-material.mjs) carga lo que
-ya está en `material/`. Lo que falta agregar a esa carpeta antes del próximo seed:
+Lo que falta sumar a `material/Información de la facultad.txt` (se lee entero,
+no hace falta ningún seed aparte de editar el archivo):
 
 #### Grupos de WhatsApp
 
@@ -289,9 +300,9 @@ ya está en `material/`. Lo que falta agregar a esa carpeta antes del próximo s
 - WhatsApp no tiene botones: ahí el menú sigue siendo la lista numerada de
   siempre (`1 análisis matemático`). La estructura de opciones es la misma que
   en Telegram, solo cambia cómo se dibuja.
-- `seed-material.mjs` guarda cada PDF entero en una fila de `material`, sin
-  trocear. Se busca y se manda el documento completo, y lo que no entra en la
-  ventana del modelo se corta por el final. Falta chunkear por sección para que
-  la búsqueda devuelva el pedazo relevante en vez del documento entero.
+- Calendario, planes de estudio e información de la facultad se le pasan al
+  modelo enteros (sin trocear); lo que no entra en la ventana del modelo se
+  corta por el final (`MAX_CARACTERES_POR_DOCUMENTO`). Falta chunkear por
+  sección si algún documento llega a superar ese límite.
 - El deploy en el servidor definitivo de la Facultad está pendiente; la imagen
   Docker se publica en GHCR pero no hay pipeline de deploy automático.

@@ -1,15 +1,14 @@
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { db, FTS, tsqueryOr } from '@fi/db';
+import { db, FTS } from '@fi/db';
 import { fechaEnZona, nombreDiaSemana, sumarDias } from '@fi/scrapper';
 import { sql } from 'drizzle-orm';
 
 import type { FragmentoContexto, ProveedorIA } from '@fi/ai';
 
 import { validarContraCatalogo } from './materias.js';
-
-import type { NumeroOpcion } from './menu.js';
 
 /** Ventana de la agenda: es lo que trae el scrapeo diario. */
 const DIAS_AGENDA = 7;
@@ -24,45 +23,19 @@ const MAX_CLASES_AGENDA = 200;
  * Recortarlo sería volver a esconderle materias que sí se dictan.
  */
 const MAX_MATERIAS_CATALOGO = 1_000;
-const MAX_FRAGMENTOS_MATERIAL = 3;
-const MAX_TITULOS_MATERIAL = 50;
-
-function normalizarTexto(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase();
-}
 
 export async function carrerasDePlanes(): Promise<string[]> {
   const { rows } = await db.execute<{ carrera: string }>(sql`
-    SELECT DISTINCT regexp_replace(subcategoria, '\\s+\\(Plan\\s+\\d+\\)$', '', 'i') AS carrera
-    FROM material
-    WHERE categoria = 'plan_estudios' AND subcategoria IS NOT NULL
-    ORDER BY carrera
+    SELECT DISTINCT carrera FROM planes_estudio ORDER BY carrera
   `);
-
-  const carreras = new Map<string, string>();
-  for (const fila of rows) {
-    const clave = normalizarTexto(fila.carrera);
-    if (!carreras.has(clave)) carreras.set(clave, fila.carrera);
-  }
-  return [...carreras.values()];
+  return rows.map((fila) => fila.carrera);
 }
 
 export async function planesDeEstudio(carrera: string): Promise<string[]> {
-  const { rows } = await db.execute<{ plan: string }>(sql`
-    SELECT DISTINCT subcategoria AS plan
-    FROM material
-    WHERE categoria = 'plan_estudios'
-      AND subcategoria IS NOT NULL
-      AND translate(
-        lower(regexp_replace(subcategoria, '\\s+\\(Plan\\s+\\d+\\)$', '', 'i')),
-        'áéíóúüñ', 'aeiouun'
-      ) = translate(lower(${carrera}), 'áéíóúüñ', 'aeiouun')
-    ORDER BY plan
+  const { rows } = await db.execute<{ etiqueta: string }>(sql`
+    SELECT etiqueta FROM planes_estudio WHERE carrera = ${carrera} ORDER BY anio
   `);
-  return rows.map((fila) => fila.plan);
+  return rows.map((fila) => fila.etiqueta);
 }
 
 function arregloTexto(valores: string[]) {
@@ -280,118 +253,99 @@ async function buscarHorarios(
   ];
 }
 
-// ── Material ──────────────────────────────────────────────────────────────────
+// ── Material: archivos leídos directo del disco ─────────────────────────────────
 
-interface FilaMaterial extends Record<string, unknown> {
-  titulo: string;
-  contenido: string;
-  categoria: string;
-  fuente: string | null;
-}
+const MATERIAL_DIR = fileURLToPath(new URL('../../../material/', import.meta.url));
 
-const TEXTO_MATERIAL = sql`(titulo || ' ' || contenido)`;
-
-/**
- * El material se guarda un PDF entero por fila (el calendario académico son
- * decenas de miles de caracteres). No se recorta acá a propósito: el único
- * corte lo hace `construirPrompt` con el límite del modelo. Cortando en los dos
- * lados el de acá ganaba —eran 3.000 caracteres, o sea la primera página del
- * calendario— y el bot decía "no tengo esa información" sobre cualquier fecha
- * que cayera más adelante.
- */
-function aFragmento(fila: FilaMaterial): FragmentoContexto {
-  const esArchivoAdjunto = fila.categoria === 'plan_estudios' || fila.categoria === 'calendario';
-
-  return {
-    titulo: fila.titulo,
-    url: FUENTE_FACULTAD,
-    contenido: fila.contenido,
-    ...(esArchivoAdjunto && fila.fuente
-      ? {
-          archivo: {
-            ruta: resolve(
-              fileURLToPath(new URL('../../../material/', import.meta.url)),
-              fila.fuente,
-            ),
-            nombre: fila.fuente,
-          },
-        }
-      : {}),
-  };
+/** Import dinámico: pdf-parse solo se necesita para calendario y planes de estudio. */
+async function parsearPdf(datos: Buffer): Promise<string> {
+  const { PDFParse } = await import('pdf-parse');
+  const parser = new PDFParse({ data: datos });
+  try {
+    const resultado = await parser.getText();
+    return resultado.text;
+  } finally {
+    await parser.destroy();
+  }
 }
 
 /**
- * Mismo esquema que los horarios: exacto → parcial → aviso explícito.
- * El material sale de PDFs llenos de acentos, así que arrastraba el mismo
- * problema de `to_tsvector('spanish', …)` que las cursadas.
+ * Texto de un PDF, cacheado en memoria por ruta absoluta: los archivos de
+ * material/ no cambian mientras el proceso corre, así que no tiene sentido
+ * volver a leerlos y parsearlos en cada pregunta. Se cachea la promesa, no el
+ * resultado, para que dos pedidos concurrentes al mismo archivo no disparen
+ * dos parseos en paralelo.
  */
-async function buscarEnMaterial(
-  categorias: string[],
-  consulta: string,
-): Promise<FragmentoContexto[]> {
-  if (consulta.length === 0) {
-    const { rows } = await db.execute<FilaMaterial>(sql`
-      SELECT categoria, titulo, contenido, fuente FROM material
-      WHERE categoria = ANY(${arregloTexto(categorias)})
-      LIMIT ${MAX_FRAGMENTOS_MATERIAL}
-    `);
-    return rows.map(aFragmento);
+const cachePdf = new Map<string, Promise<string>>();
+
+function textoDePdf(rutaAbsoluta: string): Promise<string> {
+  let promesa = cachePdf.get(rutaAbsoluta);
+  if (!promesa) {
+    promesa = readFile(rutaAbsoluta)
+      .then(parsearPdf)
+      .then((texto) => texto.trim());
+    cachePdf.set(rutaAbsoluta, promesa);
   }
+  return promesa;
+}
 
-  const exactas = await db.execute<FilaMaterial>(sql`
-    SELECT categoria, titulo, contenido, fuente FROM material
-    WHERE categoria = ANY(${arregloTexto(categorias)})
-      AND to_tsvector(${FTS}, ${TEXTO_MATERIAL}) @@ plainto_tsquery(${FTS}, ${consulta})
-    ORDER BY ts_rank(to_tsvector(${FTS}, ${TEXTO_MATERIAL}), plainto_tsquery(${FTS}, ${consulta})) DESC
-    LIMIT ${MAX_FRAGMENTOS_MATERIAL}
+export async function obtenerPlanDeEstudio(etiqueta: string): Promise<FragmentoContexto[]> {
+  const { rows } = await db.execute<{ archivo: string }>(sql`
+    SELECT archivo FROM planes_estudio WHERE etiqueta = ${etiqueta} LIMIT 1
   `);
-  if (exactas.rows.length > 0) return exactas.rows.map(aFragmento);
+  const fila = rows[0];
+  if (!fila) return [];
 
-  const tsq = tsqueryOr(consulta);
-  if (tsq) {
-    const parciales = await db.execute<FilaMaterial>(sql`
-      SELECT categoria, titulo, contenido, fuente FROM material
-      WHERE categoria = ANY(${arregloTexto(categorias)})
-        AND to_tsvector(${FTS}, ${TEXTO_MATERIAL}) @@ to_tsquery(${FTS}, ${tsq})
-      ORDER BY ts_rank(to_tsvector(${FTS}, ${TEXTO_MATERIAL}), to_tsquery(${FTS}, ${tsq})) DESC
-      LIMIT ${MAX_FRAGMENTOS_MATERIAL}
-    `);
-    if (parciales.rows.length > 0) return parciales.rows.map(aFragmento);
-  }
-
-  const { rows: titulos } = await db.execute<{ titulo: string }>(sql`
-    SELECT titulo FROM material
-    WHERE categoria = ANY(${arregloTexto(categorias)})
-    ORDER BY titulo
-    LIMIT ${MAX_TITULOS_MATERIAL}
-  `);
+  const ruta = resolve(MATERIAL_DIR, 'Plan de estudios', fila.archivo);
+  const contenido = await textoDePdf(ruta);
 
   return [
     {
-      titulo: `SIN COINCIDENCIAS para "${consulta}"`,
+      titulo: etiqueta,
       url: FUENTE_FACULTAD,
-      contenido:
-        `No hay nada sobre "${consulta}" en esta parte de la base de conocimiento. Los ` +
-        'documentos disponibles son estos; si alguno cubre lo que preguntó el alumno, ' +
-        'ofrecéselo, y si no, decile que ese dato todavía no está cargado.\n\n' +
-        titulos.map((fila) => `- ${fila.titulo}`).join('\n'),
+      contenido,
+      archivo: { ruta, nombre: fila.archivo },
     },
   ];
 }
 
-export async function obtenerPlanDeEstudio(plan: string): Promise<FragmentoContexto[]> {
-  const { rows } = await db.execute<FilaMaterial>(sql`
-    SELECT categoria, titulo, contenido, fuente FROM material
-    WHERE categoria = 'plan_estudios' AND subcategoria = ${plan}
-    LIMIT 1
-  `);
-  return rows.map(aFragmento);
+const CALENDARIO_ARCHIVO = 'CALENDARIO ACADEMICO 2026.pdf';
+const FACULTAD_ARCHIVO = 'Información de la facultad.txt';
+
+let calendarioCache: Promise<FragmentoContexto> | undefined;
+
+export function obtenerContenidoCalendario(): Promise<FragmentoContexto> {
+  calendarioCache ??= (async () => {
+    const ruta = resolve(MATERIAL_DIR, CALENDARIO_ARCHIVO);
+    return {
+      titulo: 'Calendario académico 2026',
+      url: FUENTE_FACULTAD,
+      contenido: await textoDePdf(ruta),
+      archivo: { ruta, nombre: CALENDARIO_ARCHIVO },
+    };
+  })();
+  return calendarioCache;
+}
+
+let facultadCache: Promise<FragmentoContexto> | undefined;
+
+export function obtenerContenidoFacultad(): Promise<FragmentoContexto> {
+  facultadCache ??= (async () => {
+    const ruta = resolve(MATERIAL_DIR, FACULTAD_ARCHIVO);
+    const contenido = await readFile(ruta, 'utf8');
+    return { titulo: 'Información de la facultad', url: FUENTE_FACULTAD, contenido };
+  })();
+  return facultadCache;
 }
 
 // ── Router por opción de menú ─────────────────────────────────────────────────
+//
+// La opción 3 (plan de estudios) no pasa por acá: necesita el plan activo en
+// sesión (qué carrera y versión eligió el alumno), y ese estado vive en
+// main.ts junto con el resto de la sesión.
 
 export async function obtenerContextoDeOpcion(
-  opcion: NumeroOpcion,
+  opcion: 1 | 2 | 4,
   consulta: string,
   ia: ProveedorIA,
 ): Promise<FragmentoContexto[] | SeleccionDeMaterias> {
@@ -399,10 +353,8 @@ export async function obtenerContextoDeOpcion(
     case 1:
       return buscarHorarios(consulta, ia);
     case 2:
-      return buscarEnMaterial(['calendario'], consulta);
-    case 3:
-      return buscarEnMaterial(['plan_estudios'], consulta);
+      return [await obtenerContenidoCalendario()];
     case 4:
-      return buscarEnMaterial(['infraestructura', 'enlace', 'grupo_wpp'], consulta);
+      return [await obtenerContenidoFacultad()];
   }
 }

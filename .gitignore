@@ -22,6 +22,9 @@ npm-debug.log*
 pnpm-debug.log*
 logs/
 
+# overrides locales de docker compose
+docker-compose.override.yml
+
 # runtime del bot
 .auth/
 auth_info*/

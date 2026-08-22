@@ -136,9 +136,6 @@ importers:
       globals:
         specifier: 'catalog:'
         version: 17.11.0
-      pdf-parse:
-        specifier: ^2.4.5
-        version: 2.4.5
       pg:
         specifier: 'catalog:'
         version: 8.23.0
@@ -187,6 +184,9 @@ importers:
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(@types/pg@8.21.0)(pg@8.23.0)
+      pdf-parse:
+        specifier: ^2.4.5
+        version: 2.4.5
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
