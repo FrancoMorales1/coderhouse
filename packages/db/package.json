@@ -22,10 +22,10 @@
     "clean": "tsc -b tsconfig.build.json --clean",
     "lint": "eslint src",
     "test": "vitest run",
-    "generate": "drizzle-kit generate",
-    "migrate": "drizzle-kit migrate",
-    "push": "drizzle-kit push",
-    "studio": "drizzle-kit studio"
+    "generate": "node ./scripts/drizzle-kit.mjs generate",
+    "migrate": "node ./scripts/drizzle-kit.mjs migrate",
+    "push": "node ./scripts/drizzle-kit.mjs push",
+    "studio": "node ./scripts/drizzle-kit.mjs studio"
   },
   "dependencies": {
     "@fi/core": "workspace:*",

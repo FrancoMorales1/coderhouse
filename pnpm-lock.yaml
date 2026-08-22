@@ -103,6 +103,8 @@ catalogs:
       specifier: ^4.4.3
       version: 4.4.3
 
+packageExtensionsChecksum: sha256-stYkz/Pg/D+tW7ZpkmAjBJeyQKW+uQCgiAxsgH/bPV4=
+
 importers:
 
   .:
@@ -278,7 +280,7 @@ importers:
         version: 8.21.0
       drizzle-kit:
         specifier: 'catalog:'
-        version: 0.31.10
+        version: 0.31.10(drizzle-orm@0.45.2(@types/pg@8.21.0)(pg@8.23.0))(pg@8.23.0)
       esbuild:
         specifier: 'catalog:'
         version: 0.28.2
@@ -1950,6 +1952,9 @@ packages:
   drizzle-kit@0.31.10:
     resolution: {integrity: sha512-7OZcmQUrdGI+DUNNsKBn1aW8qSoKuTH7d0mYgSP8bAzdFzKoovxEFnoGQp2dVs82EOJeYycqRtciopszwUf8bw==}
     hasBin: true
+    peerDependencies:
+      drizzle-orm: '*'
+      pg: '*'
 
   drizzle-orm@0.45.2:
     resolution: {integrity: sha512-kY0BSaTNYWnoDMVoyY8uxmyHjpJW1geOmBMdSSicKo9CIIWkSxMIj2rkeSR51b8KAPB7m+qysjuHme5nKP+E5Q==}
@@ -4459,11 +4464,13 @@ snapshots:
 
   dotenv@17.4.2: {}
 
-  drizzle-kit@0.31.10:
+  drizzle-kit@0.31.10(drizzle-orm@0.45.2(@types/pg@8.21.0)(pg@8.23.0))(pg@8.23.0):
     dependencies:
       '@drizzle-team/brocli': 0.10.2
       '@esbuild-kit/esm-loader': 2.6.5
+      drizzle-orm: 0.45.2(@types/pg@8.21.0)(pg@8.23.0)
       esbuild: 0.25.12
+      pg: 8.23.0
       tsx: 4.23.12
 
   drizzle-orm@0.45.2(@types/pg@8.21.0)(pg@8.23.0):

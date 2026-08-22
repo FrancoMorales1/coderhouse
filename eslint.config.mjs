@@ -91,7 +91,12 @@ export default defineConfig([
 
   // Archivos de configuración y scripts utilitarios: fuera del type-checking del proyecto.
   {
-    files: ['**/*.config.{js,mjs,ts}', '**/*.setup.ts', 'scripts/**/*.mjs'],
+    files: [
+      '**/*.config.{js,mjs,ts}',
+      '**/*.setup.ts',
+      'scripts/**/*.mjs',
+      'packages/*/scripts/**/*.mjs',
+    ],
     extends: [tseslint.configs.disableTypeChecked],
     rules: {
       'import-x/no-default-export': 'off',
