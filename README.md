@@ -66,6 +66,29 @@ gestionado hay que habilitarlas desde el panel).
 Para responder por Telegram hace falta `TELEGRAM_BOT_TOKEN` (lo da @BotFather).
 Sin token el bot arranca igual y responde solo por WhatsApp.
 
+### Telegram no responde en WSL2
+
+Si el bot arranca sin errores, WhatsApp conecta bien, pero Telegram nunca llega
+a loguear `Conectado a Telegram` (o tarda muchísimo) revisá si tu WSL2 anuncia
+IPv6 en la interfaz sin tener ruta real a internet. Desde Node 20, `net` intenta
+conectar por IPv6 primero (Happy Eyeballs) antes de caer a IPv4; en ese escenario
+el intento IPv6 nunca resuelve y tumba con `ETIMEDOUT` cada request a la API de
+Telegram (WhatsApp no lo sufre porque reusa un socket ya abierto por Baileys, no
+hace un request HTTP nuevo por mensaje). Se confirma con:
+
+```bash
+curl -6 -m 5 https://api.telegram.org   # si falla al toque, es esto
+```
+
+Arreglo: forzar a Node a no probar IPv6.
+
+```bash
+NODE_OPTIONS=--no-network-family-autoselection pnpm dev
+```
+
+No va en `.env`: `NODE_OPTIONS` lo lee el binario de `node` al arrancar, antes
+de que `dotenv` cargue el `.env` dentro del proceso ya corriendo.
+
 Requisitos: Node >= 24 (`nvm use`), pnpm >= 10, Docker.
 
 ## Comandos
