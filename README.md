@@ -43,7 +43,7 @@ Los tres submódulos del enunciado son **WhatsApp**, **IA** y **Scrapper**; `db`
 ## Stack
 
 Node 24 · TypeScript · pnpm workspaces · Postgres + Drizzle · Redis + BullMQ ·
-Baileys · cheerio · Gemini · Vitest · ESLint + Prettier · GitHub Actions
+Baileys · cheerio · Gemini · Vitest · ESLint + Prettier
 
 ## Arranque
 
@@ -176,20 +176,12 @@ En **WhatsApp** no hay botones: `aTextoPlano` aplana la misma respuesta a la
 lista numerada de siempre. El bot decide _qué_ ofrecer; cada canal decide cómo
 lo dibuja.
 
-## CI/CD
-
-- **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)): en cada push y PR
-  corre `format`, `lint` y `build` en paralelo, más `test` con Postgres y Redis
-  reales como service containers. El job `CI OK` es el que conviene marcar como
-  required check en la protección de rama.
-- **CD** ([.github/workflows/cd.yml](.github/workflows/cd.yml)): espera a CI,
-  buildea la imagen de `apps/bot` y la publica en GHCR. El deploy final está como
-  placeholder hasta definir el servidor de la Facultad.
-
 ## Convenciones
 
-Están en [CONTRIBUTING.md](CONTRIBUTING.md): commits, catálogo de versiones, hooks
-y la regla de que `process.env` solo se toca desde `@fi/core`.
+Están en [CONTRIBUTING.md](CONTRIBUTING.md): commits, catálogo de versiones y la
+regla de que `process.env` solo se toca desde `@fi/core`. No hay CI/CD ni hooks de
+git configurados: `pnpm check` (format:check + build + lint + test) se corre a
+mano antes de pushear.
 
 ## Roadmap
 

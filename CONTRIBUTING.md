@@ -21,14 +21,17 @@
 
 ```bash
 git checkout -b feat/mi-cambio
-pnpm check          # lo mismo que corre CI
-git commit          # commitlint valida el mensaje
-git push            # el hook pre-push corre build + test
+pnpm check          # format:check + build + lint + test, a mano
+git commit
+git push
 ```
+
+No hay hooks de git ni CI que corran esto automáticamente: queda a criterio de
+cada uno correr `pnpm check` antes de pushear o abrir el PR.
 
 ## Commits
 
-Conventional Commits con scope del submódulo:
+Conventional Commits con scope del submódulo (sugerido, no forzado por tooling):
 
 ```
 feat(whatsapp): reconectar la sesión al perder el socket
@@ -36,19 +39,8 @@ fix(ai): recortar documentos largos antes de armar el prompt
 chore(deps): subir puppeteer a 25.7
 ```
 
-Scopes válidos: `bot`, `whatsapp`, `ai`, `scrapper`, `db`, `queue`, `core`, `ci`,
+Scopes sugeridos: `bot`, `whatsapp`, `ai`, `scrapper`, `db`, `queue`, `core`,
 `deps`, `repo`, `docs`.
-
-## Hooks
-
-| Hook         | Qué corre                               |
-| ------------ | --------------------------------------- |
-| `pre-commit` | `lint-staged` (eslint --fix + prettier) |
-| `commit-msg` | `commitlint`                            |
-| `pre-push`   | `pnpm build` + `pnpm test`              |
-
-Para saltear un hook en una emergencia: `git commit --no-verify`. Se usa poco y se
-avisa en el PR.
 
 ## Tocar el scrapper
 
