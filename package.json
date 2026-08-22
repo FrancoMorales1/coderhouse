@@ -53,15 +53,5 @@
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
     "vitest": "catalog:"
-  },
-  "pnpm": {
-    "packageExtensions": {
-      "drizzle-kit": {
-        "peerDependencies": {
-          "drizzle-orm": "*",
-          "pg": "*"
-        }
-      }
-    }
   }
 }
